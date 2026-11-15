@@ -1,0 +1,6 @@
+{
+  "name": "FotoRun AI — Fotos Esportivas com Reconhecimento Facial",
+  "description": "Plataforma inteligente onde fotógrafos publicam fotos de corridas e atletas encontram suas imagens por reconhecimento facial, número de peito e filtros avançados, com checkout Pix integrado.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

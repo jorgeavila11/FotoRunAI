@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #F8FAFC;
+    color: #0F172A;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.watermark-scrim {
+  background-image: repeating-linear-gradient(
+    -35deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.08) 24px,
+    rgba(15, 23, 42, 0.05) 24px,
+    rgba(15, 23, 42, 0.05) 48px
+  );
+}
+
+@keyframes scanBeam {
+  0% {
+    transform: translateY(0%);
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100%);
+    opacity: 0.7;
+  }
+}
+
+.animate-scan-beam {
+  animation: scanBeam 2.4s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-scan-beam {
+    animation: none;
+  }
+}
