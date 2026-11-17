@@ -140,9 +140,13 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
     setCameraModalOpen(false);
     stopCamera();
 
+    // Se o servidor não responder em 110s, encerra a espera e mostra o erro
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 110_000);
     try {
       const res = await fetch('/api/search/facial', {
         method: 'POST',
+        signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           eventId: activeEvent.id,
@@ -160,8 +164,13 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
         onSelectAllMatched(data.matches.map((m: FacialMatchResult) => m.photoId));
       }
     } catch (err: unknown) {
-      setFacialError(err instanceof Error ? err.message : 'Falha na busca facial.');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setFacialError('A busca demorou demais e foi interrompida. Tente novamente em instantes.');
+      } else {
+        setFacialError(err instanceof Error ? err.message : 'Falha na busca facial.');
+      }
     } finally {
+      clearTimeout(timer);
       setIsSearchingFace(false);
     }
   };
@@ -729,15 +738,7 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
 
-                    {/* Watermark Protection Overlay */}
-                    <div
-                      className="absolute inset-0 watermark-scrim flex items-center justify-center pointer-events-none"
-                      style={{ opacity: pricing.watermarkOpacity / 100 + 0.35 }}
-                    >
-                      <span className="text-white/55 font-display font-extrabold text-xs tracking-[0.2em] -rotate-12 border border-white/25 px-3 py-1 bg-black/25 rounded">
-                        {pricing.watermarkText}
-                      </span>
-                    </div>
+                    {/* A marca d’água já vem gravada na prévia gerada pelo servidor */}
 
                     {/* Top Bib & Match overlays */}
                     <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none">
@@ -971,11 +972,6 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
                 draggable={false}
                 className="max-h-[62vh] w-auto object-contain"
               />
-              <div className="absolute inset-0 watermark-scrim flex items-center justify-center pointer-events-none">
-                <span className="text-white/40 font-display font-extrabold text-2xl sm:text-3xl tracking-[0.25em] -rotate-12">
-                  {pricing.watermarkText}
-                </span>
-              </div>
             </div>
 
             <div className="p-5 bg-[#F8FAFC] border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">

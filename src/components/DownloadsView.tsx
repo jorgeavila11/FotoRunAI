@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import JSZip from 'jszip';
 import {
   CheckCircle2,
@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { OrderReceipt, PhotoItem } from '../types';
+import { apiFetch } from '../lib/supabase';
 
 interface DownloadsViewProps {
   orders: OrderReceipt[];
@@ -36,6 +37,29 @@ export const DownloadsView: React.FC<DownloadsViewProps> = ({
   const [frameStyle, setFrameStyle] = useState<'neon' | 'minimal' | 'orange'>('neon');
   const [storyFeedback, setStoryFeedback] = useState<string | null>(null);
   const [videoPreview, setVideoPreview] = useState<PhotoItem | null>(null);
+  // Links temporários (1h) dos ORIGINAIS sem marca d’água, gerados pelo servidor só para pedidos pagos
+  const [downloadLinks, setDownloadLinks] = useState<Record<string, string>>({});
+  const [linksError, setLinksError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!latestOrder) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/orders/${encodeURIComponent(latestOrder.id)}/downloads`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha ao liberar downloads.');
+        if (!cancelled) setDownloadLinks(data.links || {});
+      } catch (err) {
+        if (!cancelled) setLinksError(err instanceof Error ? err.message : 'Falha ao liberar downloads.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [latestOrder?.id]);
+
+  const originalUrl = (photo: PhotoItem) => downloadLinks[photo.id];
 
   if (!latestOrder || unlockedPhotos.length === 0) {
     return (
@@ -63,7 +87,12 @@ export const DownloadsView: React.FC<DownloadsViewProps> = ({
     unlockedPhotos.find((p) => p.id === selectedStoryPhotoId) || unlockedPhotos[0];
 
   const handleDownloadSingle = async (photo: PhotoItem) => {
-    const resp = await fetch(photo.imageUrl);
+    const link = originalUrl(photo);
+    if (!link) {
+      setLinksError('Os links de download ainda estão sendo gerados. Tente novamente em instantes.');
+      return;
+    }
+    const resp = await fetch(link);
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -81,7 +110,9 @@ export const DownloadsView: React.FC<DownloadsViewProps> = ({
       const zip = new JSZip();
       for (let i = 0; i < unlockedPhotos.length; i++) {
         const photo = unlockedPhotos[i];
-        const resp = await fetch(photo.imageUrl);
+        const link = originalUrl(photo);
+        if (!link) continue;
+        const resp = await fetch(link);
         const blob = await resp.blob();
         const ext = photo.filename.split('.').pop() || 'jpg';
         zip.file(`${String(i + 1).padStart(2, '0')}_${photo.checkpoint.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`, blob);
@@ -110,7 +141,7 @@ export const DownloadsView: React.FC<DownloadsViewProps> = ({
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.src = activeStoryPhoto.imageUrl;
+    img.src = originalUrl(activeStoryPhoto) || activeStoryPhoto.imageUrl;
     await new Promise<void>((resolve) => {
       img.onload = () => resolve();
       img.onerror = () => resolve();
@@ -211,6 +242,10 @@ export const DownloadsView: React.FC<DownloadsViewProps> = ({
           </div>
         </div>
 
+        {linksError && (
+          <p className="text-sm font-semibold text-red-300">{linksError}</p>
+        )}
+
         <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -252,7 +287,7 @@ export const DownloadsView: React.FC<DownloadsViewProps> = ({
           <div className="lg:col-span-5 flex justify-center">
             <div className="relative w-64 h-[440px] rounded-2xl overflow-hidden bg-[#0F172A] border-4 border-[#0F172A] shadow-xl flex flex-col justify-between p-4">
               <img
-                src={activeStoryPhoto?.imageUrl}
+                src={activeStoryPhoto ? originalUrl(activeStoryPhoto) || activeStoryPhoto.imageUrl : undefined}
                 alt="Prévia do Card Finisher"
                 referrerPolicy="no-referrer"
                 className="absolute inset-0 w-full h-full object-cover"
@@ -309,7 +344,7 @@ export const DownloadsView: React.FC<DownloadsViewProps> = ({
                     }`}
                   >
                     <img
-                      src={p.imageUrl}
+                      src={originalUrl(p) || p.imageUrl}
                       alt={p.caption}
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover"
@@ -392,7 +427,7 @@ export const DownloadsView: React.FC<DownloadsViewProps> = ({
             >
               <div className="relative aspect-[3/2] bg-slate-900 overflow-hidden">
                 <img
-                  src={photo.imageUrl}
+                  src={originalUrl(photo) || photo.imageUrl}
                   alt={photo.caption}
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover"

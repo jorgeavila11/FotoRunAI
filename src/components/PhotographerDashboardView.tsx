@@ -18,6 +18,7 @@ import {
   UploadBatch,
 } from '../types';
 import { SEEDED_IMAGES } from '../data/assets';
+import { apiFetch } from '../lib/supabase';
 
 interface PhotographerDashboardViewProps {
   events: EventItem[];
@@ -51,6 +52,7 @@ interface PhotographerDashboardViewProps {
     message: string
   ) => void;
   onViewPublicEvent: (eventId: string) => void;
+  photographerName: string;
 }
 
 export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps> = ({
@@ -63,11 +65,11 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
   onUpdatePricing,
   onPayoutDone,
   onViewPublicEvent,
+  photographerName,
 }) => {
   const [targetEventId, setTargetEventId] = useState(events[0]?.id || 'sobral-online-run-2026');
   const [checkpoint, setCheckpoint] = useState('Linha de Chegada');
   const [batchName, setBatchName] = useState('');
-  const [photographerName, setPhotographerName] = useState('Marcos Silva');
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatusMsg, setUploadStatusMsg] = useState<string | null>(null);
@@ -121,14 +123,12 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
 
     try {
       const encoded = await Promise.all(validFiles.map(readFileAsBase64));
-      const res = await fetch('/api/photos/upload', {
+      const res = await apiFetch('/api/photos/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           eventId: targetEventId,
           checkpoint,
           batchName: batchName || `Lote - ${checkpoint}`,
-          photographerName,
           files: encoded,
         }),
       });
@@ -143,7 +143,8 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
       });
       setBatchName('');
       setUploadStatusMsg(
-        `${data.uploadedCount} foto(s) publicada(s) e indexada(s) na galeria de ${selectedEvent?.title}!`
+        `${data.uploadedCount} foto(s) publicada(s) e indexada(s) na galeria de ${selectedEvent?.title}!` +
+          (data.failed?.length ? ` ${data.failed.length} arquivo(s) falharam: ${data.failed.join(', ')}.` : '')
       );
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : 'Falha no upload.');
@@ -164,9 +165,8 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
     setSavingPricing(true);
     setPricingFeedback(null);
     try {
-      const res = await fetch('/api/pricing', {
+      const res = await apiFetch('/api/pricing', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           individualPrice: parsedIndiv,
           packPrice: parsedPack,
@@ -177,7 +177,9 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
       const data = await res.json();
       if (res.ok) {
         onUpdatePricing(data.pricing, data.photos);
-        setPricingFeedback('Tabela de preços e marca d’água atualizadas na vitrine!');
+        setPricingFeedback('Preços atualizados! A nova marca d’água vale para as próximas fotos enviadas.');
+      } else {
+        setPricingFeedback(data.error || 'Não foi possível salvar.');
       }
     } finally {
       setSavingPricing(false);
@@ -192,11 +194,13 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
     setPayoutLoading(true);
     setPayoutMsg(null);
     try {
-      const res = await fetch('/api/payout', { method: 'POST' });
+      const res = await apiFetch('/api/payout', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         onPayoutDone(data.photographerStats, data.message);
         setPayoutMsg(data.message);
+      } else {
+        setPayoutMsg(data.error || 'Não foi possível solicitar o saque.');
       }
     } finally {
       setPayoutLoading(false);
@@ -376,8 +380,8 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
               id="upload-photographer"
               type="text"
               value={photographerName}
-              onChange={(e) => setPhotographerName(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-[#0F172A] focus:outline-none focus:border-[#D04400]"
+              readOnly
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-600"
             />
           </div>
         </div>

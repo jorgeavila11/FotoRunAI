@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Camera, ShoppingBag, Menu, X, User } from 'lucide-react';
+import { Camera, ShoppingBag, Menu, X, User, LogOut } from 'lucide-react';
 import { ActiveView, AuthUser } from '../types';
 
 interface NavbarProps {
@@ -10,6 +10,7 @@ interface NavbarProps {
   currentUser: AuthUser | null;
   onOpenAuth: () => void;
   hasOrders: boolean;
+  onLogout: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -20,6 +21,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
   onOpenAuth,
   hasOrders,
+  onLogout,
 }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -29,6 +31,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'event', label: 'Busca Facial' },
     { id: 'photographer', label: 'Painel Fotógrafo' },
     { id: 'downloads', label: hasOrders ? 'Minhas Fotos' : 'Downloads' },
+    ...(currentUser?.isAdmin ? [{ id: 'admin' as ActiveView, label: 'Administração' }] : []),
   ];
 
   const handleNav = (id: ActiveView) => {
@@ -98,6 +101,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             <User className="w-4 h-4 text-[#38BDF8]" />
             <span>{currentUser ? currentUser.name.split(' ')[0] : 'Entrar'}</span>
           </button>
+
+          {currentUser && (
+            <button
+              type="button"
+              onClick={onLogout}
+              aria-label="Sair da conta"
+              title="Sair"
+              className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          )}
 
           <button
             type="button"

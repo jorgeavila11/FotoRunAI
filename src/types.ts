@@ -1,4 +1,4 @@
-export type ActiveView = 'home' | 'events' | 'event' | 'photographer' | 'downloads';
+export type ActiveView = 'home' | 'events' | 'event' | 'photographer' | 'downloads' | 'admin';
 
 export type UserRole = 'athlete' | 'photographer';
 
@@ -25,6 +25,7 @@ export interface EventItem {
   totalVideos: number;
   checkpoints: string[];
   status: 'disponivel' | 'em_breve';
+  packPrice?: number;
 }
 
 export interface PhotoItem {
@@ -112,6 +113,8 @@ export interface AuthUser {
   email: string;
   phone: string;
   role: UserRole;
+  /** Administrador da plataforma (cria e edita eventos) */
+  isAdmin?: boolean;
   bibNumber?: string;
   pixKey?: string;
 }

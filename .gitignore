@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# cópia antiga do app exportado do AI Studio
+FotoRunAI-main/

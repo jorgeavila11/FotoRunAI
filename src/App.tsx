@@ -4,7 +4,8 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCw, Lock } from 'lucide-react';
+import { supabase, apiFetch } from './lib/supabase';
 import {
   ActiveView,
   AuthUser,
@@ -21,6 +22,7 @@ import { Footer } from './components/Footer';
 import { HomeView } from './components/HomeView';
 import { EventGalleryView } from './components/EventGalleryView';
 import { PhotographerDashboardView } from './components/PhotographerDashboardView';
+import { AdminEventsView } from './components/AdminEventsView';
 import { CheckoutModal } from './components/CheckoutModal';
 import { DownloadsView } from './components/DownloadsView';
 import { AuthModal } from './components/AuthModal';
@@ -28,17 +30,21 @@ import { AuthModal } from './components/AuthModal';
 interface BootstrapPayload {
   events: EventItem[];
   photos: PhotoItem[];
-  batches: UploadBatch[];
-  sales: SaleTransaction[];
   pricing: PricingConfig;
-  photographerStats: {
-    totalPhotosUploaded: number;
-    totalSold: number;
-    grossRevenue: number;
-    availablePixBalance: number;
-  };
-  orders: OrderReceipt[];
 }
+
+interface MePayload {
+  user: AuthUser;
+  orders: OrderReceipt[];
+  photographer?: {
+    stats: { totalPhotosUploaded: number; totalSold: number; grossRevenue: number; availablePixBalance: number };
+    sales: SaleTransaction[];
+    batches: UploadBatch[];
+    pricing: PricingConfig;
+  };
+}
+
+const EMPTY_STATS = { totalPhotosUploaded: 0, totalSold: 0, grossRevenue: 0, availablePixBalance: 0 };
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -55,12 +61,13 @@ export default function App() {
     watermarkText: 'FOTORUN PREVIEW',
     watermarkOpacity: 35,
   });
-  const [photographerStats, setPhotographerStats] = useState({
-    totalPhotosUploaded: 0,
-    totalSold: 0,
-    grossRevenue: 0,
-    availablePixBalance: 0,
-  });
+  // Configuração de preço do fotógrafo logado (painel)
+  const [photographerPricing, setPhotographerPricing] = useState<PricingConfig | null>(null);
+  const [photographerStats, setPhotographerStats] = useState(EMPTY_STATS);
+  const [pendingCheckout, setPendingCheckout] = useState<{
+    mode: 'pack' | 'selected' | 'single';
+    photoIds: string[];
+  } | null>(null);
   const [orders, setOrders] = useState<OrderReceipt[]>([]);
 
   const [activeView, setActiveView] = useState<ActiveView>('home');
@@ -103,11 +110,7 @@ export default function App() {
       const data: BootstrapPayload = await res.json();
       setEvents(data.events || []);
       setPhotos(data.photos || []);
-      setBatches(data.batches || []);
-      setSales(data.sales || []);
       if (data.pricing) setPricing(data.pricing);
-      if (data.photographerStats) setPhotographerStats(data.photographerStats);
-      if (Array.isArray(data.orders)) setOrders(data.orders);
       if (data.events && data.events.length > 0) {
         setActiveEventId((prev) =>
           data.events.some((ev) => ev.id === prev) ? prev : data.events[0].id
@@ -125,6 +128,60 @@ export default function App() {
   useEffect(() => {
     fetchBootstrap();
   }, [fetchBootstrap]);
+
+  /** Carrega perfil, pedidos e (se fotógrafo) o painel do usuário logado. */
+  const loadMe = useCallback(async (opts?: { goToDashboard?: boolean }) => {
+    try {
+      const res = await apiFetch('/api/me');
+      if (!res.ok) throw new Error();
+      const data: MePayload = await res.json();
+      setCurrentUser(data.user);
+      setOrders(data.orders || []);
+      if (data.photographer) {
+        setPhotographerStats(data.photographer.stats);
+        setSales(data.photographer.sales);
+        setBatches(data.photographer.batches);
+        setPhotographerPricing(data.photographer.pricing);
+        if (opts?.goToDashboard) {
+          setActiveView('photographer');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }
+    } catch {
+      setCurrentUser(null);
+    }
+  }, []);
+
+  const clearAccountState = () => {
+    setCurrentUser(null);
+    setOrders([]);
+    setSales([]);
+    setBatches([]);
+    setPhotographerStats(EMPTY_STATS);
+    setPhotographerPricing(null);
+  };
+
+  // Sessão do Supabase: restaura ao abrir o site e acompanha login/logout
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) loadMe();
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        clearAccountState();
+      } else if (event === 'SIGNED_IN') {
+        loadMe();
+      }
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [loadMe]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    clearAccountState();
+    setActiveView('home');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -180,6 +237,12 @@ export default function App() {
     mode: 'pack' | 'selected' | 'single',
     photoIds: string[]
   ) => {
+    // Compra exige conta (o pedido e os downloads ficam vinculados ao atleta)
+    if (!currentUser) {
+      setPendingCheckout({ mode, photoIds });
+      setAuthModalState({ isOpen: true, initialRole: 'athlete' });
+      return;
+    }
     const fallbackIds =
       photoIds.length > 0
         ? photoIds
@@ -194,11 +257,7 @@ export default function App() {
 
   const handleOpenCartFromNavbar = () => {
     if (selectedPhotoIds.length > 0) {
-      setCheckoutState({
-        isOpen: true,
-        purchaseType: selectedPhotoIds.length === 1 ? 'single' : 'selected',
-        targetPhotoIds: selectedPhotoIds,
-      });
+      handleStartCheckout(selectedPhotoIds.length === 1 ? 'single' : 'selected', selectedPhotoIds);
       return;
     }
 
@@ -212,11 +271,7 @@ export default function App() {
     }
 
     if (eventPhotoIds.length > 0) {
-      setCheckoutState({
-        isOpen: true,
-        purchaseType: 'pack',
-        targetPhotoIds: eventPhotoIds,
-      });
+      handleStartCheckout('pack', eventPhotoIds);
     }
   };
 
@@ -224,15 +279,34 @@ export default function App() {
     setAuthModalState({ isOpen: true, initialRole: role });
   };
 
-  const handleAuthenticated = (user: AuthUser) => {
-    setCurrentUser(user);
-    if (user.role === 'photographer') {
-      setActiveView('photographer');
-      scrollToTop();
+  const handleAuthenticated = async () => {
+    await loadMe({ goToDashboard: authModalState.initialRole === 'photographer' || activeView === 'photographer' });
+    if (pendingCheckout) {
+      const { mode, photoIds } = pendingCheckout;
+      setPendingCheckout(null);
+      const ids = photoIds.length > 0 ? photoIds : photos.filter((p) => p.eventId === activeEventId).map((p) => p.id);
+      setCheckoutState({ isOpen: true, purchaseType: mode, targetPhotoIds: ids });
     }
   };
 
+  const loginGate = (title: string, text: string, role: UserRole) => (
+    <div className="max-w-lg mx-auto my-16 bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-4">
+      <Lock className="w-10 h-10 text-[#D04400] mx-auto" />
+      <h1 className="text-lg font-extrabold text-[#0F172A]">{title}</h1>
+      <p className="text-sm text-slate-600">{text}</p>
+      <button
+        type="button"
+        onClick={() => handleOpenAuth(role)}
+        className="px-5 py-2.5 rounded-lg bg-[#D04400] hover:bg-[#A63500] text-white text-sm font-bold"
+      >
+        Entrar ou criar conta
+      </button>
+    </div>
+  );
+
   const activeEvent = events.find((e) => e.id === activeEventId) || events[0];
+  // Preço do pacote é definido por evento
+  const eventPricing: PricingConfig = { ...pricing, packPrice: activeEvent?.packPrice ?? pricing.packPrice };
   const targetPhotosForCheckout = photos.filter((p) =>
     checkoutState.targetPhotoIds.includes(p.id)
   );
@@ -247,6 +321,7 @@ export default function App() {
         currentUser={currentUser}
         onOpenAuth={() => handleOpenAuth('athlete')}
         hasOrders={orders.length > 0}
+        onLogout={handleLogout}
       />
 
       <main className="flex-1">
@@ -310,7 +385,7 @@ export default function App() {
                   }));
                 }}
                 photos={photos}
-                pricing={pricing}
+                pricing={eventPricing}
                 selectedPhotoIds={selectedPhotoIds}
                 onToggleSelectPhoto={handleToggleSelectPhoto}
                 onSelectAllMatched={handleSelectAllMatched}
@@ -322,12 +397,23 @@ export default function App() {
               />
             )}
 
-            {activeView === 'photographer' && (
+            {activeView === 'photographer' && currentUser?.role !== 'photographer' &&
+              loginGate(
+                'Área do fotógrafo',
+                currentUser
+                  ? 'Sua conta é de atleta. Para vender fotos, crie uma conta de fotógrafo com outro e-mail.'
+                  : 'Entre com sua conta de fotógrafo para enviar fotos, definir preços e acompanhar vendas.',
+                'photographer'
+              )}
+
+            {activeView === 'photographer' && currentUser?.role === 'photographer' && (
               <PhotographerDashboardView
+                key={photographerPricing ? 'ready' : 'loading'}
+                photographerName={currentUser.name}
                 events={events}
                 batches={batches}
                 sales={sales}
-                pricing={pricing}
+                pricing={photographerPricing || pricing}
                 stats={photographerStats}
                 onUploaded={({ batch, photos: newPhotos, photographerStats: nextStats }) => {
                   setPhotos((prev) => [...newPhotos, ...prev]);
@@ -342,8 +428,9 @@ export default function App() {
                   setPhotographerStats(nextStats);
                 }}
                 onUpdatePricing={(nextPricing, updatedPhotos) => {
-                  setPricing(nextPricing);
+                  setPhotographerPricing(nextPricing);
                   setPhotos(updatedPhotos);
+                  fetchBootstrap();
                 }}
                 onPayoutDone={(nextStats) => {
                   setPhotographerStats(nextStats);
@@ -352,7 +439,26 @@ export default function App() {
               />
             )}
 
-            {activeView === 'downloads' && (
+            {activeView === 'admin' && !currentUser?.isAdmin &&
+              loginGate(
+                'Administração',
+                currentUser
+                  ? 'Esta área é exclusiva do administrador da plataforma.'
+                  : 'Entre com a conta de administrador para gerenciar os eventos.',
+                'photographer'
+              )}
+
+            {activeView === 'admin' && currentUser?.isAdmin && (
+              <AdminEventsView
+                onEventsChanged={fetchBootstrap}
+                onViewPublicEvent={(eventId) => handleSelectEvent(eventId)}
+              />
+            )}
+
+            {activeView === 'downloads' && !currentUser &&
+              loginGate('Minhas fotos', 'Entre na sua conta para ver e baixar as fotos que você comprou.', 'athlete')}
+
+            {activeView === 'downloads' && currentUser && (
               <DownloadsView
                 key={orders[0]?.id || 'empty'}
                 orders={orders}
@@ -377,12 +483,10 @@ export default function App() {
               ? targetPhotosForCheckout
               : photos.filter((p) => p.eventId === activeEvent.id)
           }
-          pricing={pricing}
+          pricing={eventPricing}
           currentUser={currentUser}
-          onOrderConfirmed={({ receipt, sales: nextSales, photographerStats: nextStats }) => {
-            setOrders((prev) => [receipt, ...prev]);
-            setSales(nextSales);
-            setPhotographerStats(nextStats);
+          onOrderConfirmed={({ receipt }) => {
+            setOrders((prev) => [receipt, ...prev.filter((o) => o.id !== receipt.id)]);
             setCheckoutState((prev) => ({ ...prev, isOpen: false }));
             setSelectedPhotoIds([]);
             setActiveView('downloads');
@@ -395,7 +499,9 @@ export default function App() {
         <AuthModal
           isOpen={authModalState.isOpen}
           initialRole={authModalState.initialRole}
-          onClose={() => setAuthModalState((prev) => ({ ...prev, isOpen: false }))}
+          onClose={() => {
+            setAuthModalState((prev) => ({ ...prev, isOpen: false }));
+          }}
           onAuthenticated={handleAuthenticated}
         />
       )}

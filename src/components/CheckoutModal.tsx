@@ -10,7 +10,8 @@ import {
   Loader2,
   Tag,
 } from 'lucide-react';
-import { AuthUser, EventItem, OrderReceipt, PhotoItem, PricingConfig, SaleTransaction } from '../types';
+import { apiFetch } from '../lib/supabase';
+import { AuthUser, EventItem, OrderReceipt, PhotoItem, PricingConfig } from '../types';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -20,16 +21,7 @@ interface CheckoutModalProps {
   targetPhotos: PhotoItem[];
   pricing: PricingConfig;
   currentUser: AuthUser | null;
-  onOrderConfirmed: (payload: {
-    receipt: OrderReceipt;
-    sales: SaleTransaction[];
-    photographerStats: {
-      totalPhotosUploaded: number;
-      totalSold: number;
-      grossRevenue: number;
-      availablePixBalance: number;
-    };
-  }) => void;
+  onOrderConfirmed: (payload: { receipt: OrderReceipt }) => void;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
@@ -45,13 +37,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card'>('pix');
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<string>('');
+  const [percentOff, setPercentOff] = useState(0);
   const [couponFeedback, setCouponFeedback] = useState<string | null>(null);
 
-  const [athleteName, setAthleteName] = useState(currentUser?.name || 'Carlos Silva');
-  const [athleteEmail, setAthleteEmail] = useState(currentUser?.email || 'carlos.silva@corredor.com.br');
-  const [athletePhone, setAthletePhone] = useState(currentUser?.phone || '(88) 99999-3690');
+  const [athleteName, setAthleteName] = useState(currentUser?.name || '');
+  const [athleteEmail, setAthleteEmail] = useState(currentUser?.email || '');
+  const [athletePhone, setAthletePhone] = useState(currentUser?.phone || '');
   const [bibNumber, setBibNumber] = useState(
-    currentUser?.bibNumber || (targetPhotos[0]?.bibNumbers[0] ? `#${targetPhotos[0].bibNumbers[0]}` : '#1042')
+    currentUser?.bibNumber || (targetPhotos[0]?.bibNumbers[0] ? `#${targetPhotos[0].bibNumbers[0]}` : '')
   );
 
   // Card fields
@@ -81,8 +74,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       ? pricing.packPrice
       : targetPhotos.reduce((sum, p) => sum + p.price, 0);
 
-  const hasDiscount = appliedCoupon === 'ATLETA10' || appliedCoupon === 'SOBRALCORRE';
-  const discountAmount = hasDiscount ? Number((basePrice * 0.1).toFixed(2)) : 0;
+  const hasDiscount = percentOff > 0;
+  const discountAmount = hasDiscount ? Number(((basePrice * percentOff) / 100).toFixed(2)) : 0;
   const finalTotal = Math.max(0.01, Number((basePrice - discountAmount).toFixed(2)));
 
   const minutes = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
@@ -92,14 +85,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     2
   )}5802BR5915FOTORUN AI TECH6009SOBRAL-CE62070503***630489A1`;
 
-  const handleApplyCoupon = () => {
+  const handleApplyCoupon = async () => {
     const code = couponInput.trim().toUpperCase();
-    if (code === 'ATLETA10' || code === 'SOBRALCORRE') {
-      setAppliedCoupon(code);
-      setCouponFeedback('Cupom de 10% aplicado!');
-    } else {
+    if (!code) return;
+    try {
+      const res = await fetch(`/api/coupons/${encodeURIComponent(code)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setAppliedCoupon(data.code);
+      setPercentOff(data.percentOff);
+      setCouponFeedback(`Cupom de ${data.percentOff}% aplicado!`);
+    } catch {
       setAppliedCoupon('');
-      setCouponFeedback('Cupom inválido. Use ATLETA10 ou SOBRALCORRE.');
+      setPercentOff(0);
+      setCouponFeedback('Cupom inválido ou expirado.');
     }
   };
 
@@ -121,9 +120,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setSubmitting(true);
     setErrorMsg(null);
     try {
-      const res = await fetch('/api/orders', {
+      const res = await apiFetch('/api/orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           eventId: activeEvent.id,
           athleteName,
@@ -281,7 +279,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
                   <div className="flex-1 space-y-2 w-full">
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      Copie o código abaixo para pagar no Pix Copia e Cola ou clique em confirmar pagamento para liberar seus arquivos agora.
+                      MODO DE TESTE: o pagamento ainda não é cobrado (o Pix real entra no Passo 3). Clique em confirmar para simular a compra.
                     </p>
                     <button
                       type="button"
