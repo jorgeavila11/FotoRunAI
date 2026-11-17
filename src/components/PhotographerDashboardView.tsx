@@ -98,7 +98,8 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
           resolve({
             filename: file.name,
             base64: reader.result,
-            mimeType: file.type || 'image/jpeg',
+            // O Windows não informa o tipo do .jxl; o servidor identifica o formato pelo conteúdo
+            mimeType: file.type || (/\.jxl$/i.test(file.name) ? 'image/jxl' : 'image/jpeg'),
           });
         } else {
           reject(new Error('Falha ao ler arquivo'));
@@ -111,9 +112,11 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
 
   const handleFilesSelected = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
-    const validFiles = Array.from(fileList).filter((f) => f.type.startsWith('image/')).slice(0, 10);
+    const validFiles = Array.from(fileList)
+      .filter((f) => f.type.startsWith('image/') || /\.jxl$/i.test(f.name))
+      .slice(0, 10);
     if (validFiles.length === 0) {
-      setUploadError('Selecione arquivos de imagem válidos (JPG, PNG ou WebP).');
+      setUploadError('Selecione arquivos de imagem válidos (JPG, PNG, WebP ou JPEG XL).');
       return;
     }
 
@@ -408,7 +411,7 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.jxl"
             multiple
             className="hidden"
             onChange={(e) => {
@@ -433,7 +436,7 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
                   Arraste fotos aqui ou clique para selecionar arquivos
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
-                  Suporta JPG, PNG e WebP em lote · Indexação facial e leitura de número automáticas
+                  Suporta JPG, PNG, WebP e JPEG XL (.jxl) em lote · Indexação facial e leitura de número automáticas
                 </p>
               </div>
               <span className="inline-block px-4 py-2 rounded-lg bg-[#0F172A] text-white text-xs font-semibold">

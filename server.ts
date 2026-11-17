@@ -8,6 +8,7 @@ import { db, requireUser, requirePhotographer, requireAdmin, AuthedRequest, BUCK
 import { makeAnalysisImage, previewPublicUrl, signedOriginalUrl, storeEventCover, storePhotoFiles } from './server/media';
 import { embedSelfie, faceModelsAvailable, similarityToConfidence, toPgVector } from './server/faces';
 import { indexPhotoFaces, FACE_MATCH_THRESHOLD } from './server/face-index';
+import { decodeDataUrl, normalizeImage } from './server/image-formats';
 
 const PORT = Number(process.env.PORT) || 3000;
 // Modelos do Gemini em ordem de preferência. Se um estiver sobrecarregado, lento ou indisponível,
@@ -421,7 +422,7 @@ app.post('/api/search/facial', async (req, res) => {
 
     // LGPD: a selfie e a impressão digital dela são usadas só nesta requisição e não são gravadas.
     const started = Date.now();
-    const selfie = await embedSelfie(Buffer.from(selfieBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64'));
+    const selfie = await embedSelfie((await normalizeImage(decodeDataUrl(selfieBase64))).buffer);
     if (!selfie) {
       return res.status(422).json({
         error: 'Não encontramos um rosto na sua selfie. Tente outra foto, de frente, com o rosto bem iluminado e sem óculos escuros.',
@@ -579,8 +580,10 @@ app.post('/api/photos/upload', requireUser, requirePhotographer, async (req: Aut
 
     for (const file of files) {
       try {
-        const mimeType = ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimeType) ? file.mimeType : 'image/jpeg';
-        const original = Buffer.from(file.base64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+        // Converte formatos especiais (ex.: JPEG XL .jxl) para JPEG de alta qualidade
+        const normalized = await normalizeImage(decodeDataUrl(file.base64), file.filename || 'foto.jpg', file.mimeType);
+        const { mimeType, buffer: original } = normalized;
+        if (normalized.convertedFrom) console.log(`[upload] ${file.filename}: convertido de ${normalized.convertedFrom.toUpperCase()} para JPEG`);
 
         const stored = await storePhotoFiles({
           original,
@@ -668,7 +671,7 @@ app.post('/api/photos/upload', requireUser, requirePhotographer, async (req: Aut
             event_id: eventId,
             photographer_id: u.id,
             batch_id: batch.id,
-            filename: (file.filename || 'foto.jpg').slice(0, 200),
+            filename: normalized.filename.slice(0, 200),
             original_path: stored.originalPath,
             preview_path: stored.previewPath,
             media_type: 'photo',
@@ -1031,7 +1034,7 @@ app.post('/api/admin/events', requireUser, requireAdmin, async (req, res) => {
     const { cols, errors } = await eventColumns(input, true);
     if (errors.length) return res.status(400).json({ error: errors.join(' ') });
     if (input.coverBase64) {
-      cols.cover_image = await storeEventCover(Buffer.from(input.coverBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64'), id);
+      cols.cover_image = await storeEventCover((await normalizeImage(decodeDataUrl(input.coverBase64))).buffer, id);
     }
 
     const { error } = await db.from('events').insert({ id, ...cols });
@@ -1050,7 +1053,7 @@ app.patch('/api/admin/events/:id', requireUser, requireAdmin, async (req, res) =
     const { cols, errors } = await eventColumns(input, false);
     if (errors.length) return res.status(400).json({ error: errors.join(' ') });
     if (input.coverBase64) {
-      cols.cover_image = await storeEventCover(Buffer.from(input.coverBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64'), id);
+      cols.cover_image = await storeEventCover((await normalizeImage(decodeDataUrl(input.coverBase64))).buffer, id);
     }
 
     const { data, error } = await db.from('events').update(cols).eq('id', id).select('id').maybeSingle();
