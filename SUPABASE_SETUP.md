@@ -84,3 +84,48 @@ No Supabase, em **Table Editor**, você vê os dados reais: `profiles`, `photos`
 - A marca d'água nova só vale para as fotos enviadas **depois** da mudança. As prévias antigas mantêm a marca d'água anterior.
 - O arquivo `bun.lock` ficou desatualizado. Se você usa `npm`, pode apagá-lo, porque o `package-lock.json` substitui.
 - No AI Studio, as variáveis do `.env` são cadastradas no painel **Secrets**.
+
+---
+
+# Passo 4 — Reconhecimento facial gratuito (YuNet + SFace)
+
+A busca por selfie agora usa reconhecimento facial de verdade, rodando no próprio servidor, sem custo por uso.
+
+- **YuNet** encontra todos os rostos de cada foto, inclusive os pequenos ao fundo.
+- **SFace** transforma cada rosto em uma "impressão digital" de 128 números.
+- O Supabase compara a selfie com todas as impressões do evento em menos de 1 segundo, sem limite de fotos.
+- Os modelos são do OpenCV Zoo, com licença Apache-2.0, que permite uso comercial.
+- O Gemini continua sendo usado só para ler o número de peito.
+
+## Ativar
+
+1. No Supabase, abra **SQL Editor > New query**, cole todo o conteúdo de `supabase/migrations/0003_faces.sql` e clique em **Run**.
+2. No terminal, dentro da pasta do projeto:
+   ```bash
+   npm install
+   npm run models:download   # só é necessário se a pasta models/ estiver vazia
+   npm run faces:reindex     # analisa os rostos das fotos que já estavam no banco
+   npm run dev
+   ```
+
+As fotos novas são analisadas automaticamente no envio.
+
+## Ajustar a precisão
+
+Para testar com arquivos do seu computador, sem mexer no banco:
+
+```bash
+npm run faces:test -- minha-selfie.jpg foto1.jpg foto2.jpg
+```
+
+O comando mostra a semelhança (de 0 a 1) entre a selfie e o rosto mais parecido de cada foto.
+
+- **Fotos de outras pessoas aparecendo na busca:** aumente o limiar no `.env`, por exemplo `FACE_MATCH_THRESHOLD=0.40`.
+- **Fotos suas ficando de fora:** diminua o limiar, por exemplo `FACE_MATCH_THRESHOLD=0.32`.
+
+O valor padrão é **0,36**, a referência do SFace. Rostos pequenos, com menos de 64 px, precisam de 0,09 a mais de semelhança, porque a "impressão digital" deles é menos confiável.
+
+## Limitações
+
+- Óculos escuros, boné cobrindo os olhos, rosto de perfil ou rosto muito pequeno reduzem a semelhança. Nesses casos, a busca por número de peito complementa.
+- Para mais precisão no futuro, dá para trocar só o arquivo `server/faces.ts` por um serviço pago, como o Amazon Rekognition, sem mudar o resto do sistema.

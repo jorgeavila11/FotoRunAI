@@ -11,7 +11,10 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "seed": "tsx scripts/seed-demo.ts",
-    "check:gemini": "tsx scripts/check-gemini.ts"
+    "check:gemini": "tsx scripts/check-gemini.ts",
+    "models:download": "tsx scripts/download-models.ts",
+    "faces:reindex": "tsx scripts/reindex-faces.ts",
+    "faces:test": "tsx scripts/test-faces.ts"
   },
   "dependencies": {
     "@google/genai": "^3.3.0",
@@ -23,6 +26,7 @@
     "jszip": "^3.10.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "onnxruntime-node": "^1.31.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "sharp": "^0.35.5",

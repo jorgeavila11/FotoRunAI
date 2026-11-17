@@ -9,6 +9,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { db } from '../server/supabase';
 import { storePhotoFiles } from '../server/media';
+import { indexPhotoFaces } from '../server/face-index';
 
 const DEMO_EMAIL = process.env.DEMO_PHOTOGRAPHER_EMAIL || 'fotografo.demo@fotorun.app';
 const IMAGES_DIR = path.resolve(process.cwd(), 'src', 'assets', 'images');
@@ -83,7 +84,7 @@ async function main() {
       watermarkText: 'FOTORUN PREVIEW',
       watermarkOpacity: 35,
     });
-    const { error } = await db.from('photos').insert({
+    const { data: inserted, error } = await db.from('photos').insert({
       event_id: s.eventId,
       photographer_id: photographerId,
       filename: s.file,
@@ -99,9 +100,13 @@ async function main() {
       face_box: s.faceBox ?? null,
       is_podium: Boolean(s.podium),
       price: 14.9,
+    }).select('id').single();
+    if (error || !inserted) throw error;
+    const faces = await indexPhotoFaces(inserted.id, s.eventId, original).catch((err) => {
+      console.warn(`  (análise facial falhou: ${err.message} — rode "npm run faces:reindex" depois)`);
+      return { count: 0 };
     });
-    if (error) throw error;
-    console.log(`+ enviada: ${key}`);
+    console.log(`+ enviada: ${key} (${faces.count} rosto(s))`);
   }
 
   // O fotógrafo demo passa a administrar os eventos de exemplo (pode editar o preço do pacote)

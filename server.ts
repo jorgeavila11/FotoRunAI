@@ -6,6 +6,8 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { db, requireUser, requirePhotographer, requireAdmin, AuthedRequest, BUCKET_PREVIEWS } from './server/supabase';
 import { makeAnalysisImage, previewPublicUrl, signedOriginalUrl, storeEventCover, storePhotoFiles } from './server/media';
+import { embedSelfie, faceModelsAvailable, similarityToConfidence, toPgVector } from './server/faces';
+import { indexPhotoFaces, FACE_MATCH_THRESHOLD } from './server/face-index';
 
 const PORT = Number(process.env.PORT) || 3000;
 // Modelos do Gemini em ordem de preferência. Se um estiver sobrecarregado, lento ou indisponível,
@@ -403,116 +405,63 @@ app.get('/api/coupons/:code', async (req, res) => {
 
 app.post('/api/search/facial', async (req, res) => {
   try {
-    const { eventId, selfieBase64, mimeType } = req.body as { eventId?: string; selfieBase64: string; mimeType?: string };
+    const { eventId, selfieBase64 } = req.body as { eventId?: string; selfieBase64: string };
 
     if (!selfieBase64) {
       return res.status(400).json({ error: 'Envie ou capture uma selfie para iniciar a busca facial.' });
     }
-    if (!ai) {
-      return res.status(500).json({ error: 'Chave GEMINI_API_KEY não configurada no servidor.' });
+    if (!faceModelsAvailable()) {
+      return res.status(500).json({ error: 'Reconhecimento facial não configurado no servidor. Rode "npm run models:download".' });
     }
 
-    // LGPD: a selfie é usada só nesta requisição e não é gravada em lugar nenhum.
+    // LGPD: a selfie e a impressão digital dela são usadas só nesta requisição e não são gravadas.
     const started = Date.now();
-    const selfieBuffer = await makeAnalysisImage(Buffer.from(selfieBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64'), 800);
-    const cleanSelfie = selfieBuffer.toString('base64');
+    const selfie = await embedSelfie(Buffer.from(selfieBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64'));
+    if (!selfie) {
+      return res.status(422).json({
+        error: 'Não encontramos um rosto na sua selfie. Tente outra foto, de frente, com o rosto bem iluminado e sem óculos escuros.',
+      });
+    }
 
-    let query = db
-      .from('photos')
-      .select('id, checkpoint, bib_numbers, preview_path')
-      .order('captured_at', { ascending: false })
-      .limit(MAX_FACIAL_CANDIDATES);
-    if (eventId && eventId !== 'all') query = query.eq('event_id', eventId);
-    const { data: candidates, error } = await query;
+    const scopedEvent = eventId && eventId !== 'all' ? eventId : null;
+    const { data, error } = await db.rpc('match_photo_faces', {
+      query_embedding: toPgVector(selfie.embedding),
+      p_event_id: scopedEvent,
+      match_threshold: FACE_MATCH_THRESHOLD,
+    });
     if (error) throw error;
 
-    if (!candidates || candidates.length === 0) {
-      return res.json({ selfieSummary: 'Nenhum registro encontrado neste evento.', matches: [] });
-    }
-
-    const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [
-      {
-        text:
-          'Você é o motor de reconhecimento facial da FotoRun AI, um site que encontra fotos de atletas em corridas de rua.\n' +
-          'A PRIMEIRA imagem é a SELFIE DE REFERÊNCIA. Se ela tiver mais de um rosto, a pessoa procurada é a do rosto MAIOR e mais central.\n' +
-          'As imagens seguintes são fotos do evento, cada uma precedida do seu PHOTO_ID. Elas têm uma marca d’água "FOTORUN PREVIEW": ignore-a.\n\n' +
-          'Para CADA foto, sem pular nenhuma:\n' +
-          '1. Examine TODOS os rostos da foto, inclusive pequenos, de perfil, ao fundo ou parcialmente cobertos.\n' +
-          '2. Compare cada rosto com a pessoa procurada usando traços que não mudam: formato do rosto e do queixo, nariz, boca, sobrancelhas, orelhas, linha do cabelo, barba e tom de pele.\n' +
-          '3. NÃO descarte por diferenças que mudam de uma foto para outra: óculos escuros, boné, ângulo, expressão, suor, iluminação, roupa, medalha ou fundo.\n' +
-          '4. Se algum rosto for a mesma pessoa, marque isMatch=true e informe faceBox (top, left, width, height em 0-100) desse rosto.\n\n' +
-          'Devolva uma entrada em "matches" para TODAS as fotos recebidas (isMatch true ou false), com confidence de 0 a 100 e reason curta em português do Brasil. ' +
-          'Escreva selfieSummary em português do Brasil, descrevendo só a pessoa procurada.',
-      },
-      { inlineData: { mimeType: 'image/jpeg', data: cleanSelfie } },
-    ];
-
-    for (const c of candidates) {
-      const file = await db.storage.from(BUCKET_PREVIEWS).download(c.preview_path);
-      if (file.error || !file.data) continue;
-      const buf = await makeAnalysisImage(Buffer.from(await file.data.arrayBuffer()), 800);
-      parts.push({ text: `PHOTO_ID: ${c.id} | Checkpoint: ${c.checkpoint} | Bibs: ${(c.bib_numbers || []).join(',') || 'N/A'}` });
-      parts.push({ inlineData: { mimeType: 'image/jpeg', data: buf.toString('base64') } });
-    }
-
-    console.log(`[busca facial] evento=${eventId} candidatos=${candidates.length} — enviando ao Gemini (${GEMINI_MODELS.join(' → ')})...`);
-    const response = await generateWithFallback('busca facial', {
-      contents: { parts },
-      config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            selfieSummary: { type: Type.STRING },
-            matches: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  photoId: { type: Type.STRING },
-                  isMatch: { type: Type.BOOLEAN },
-                  confidence: { type: Type.NUMBER },
-                  reason: { type: Type.STRING },
-                  faceBox: {
-                    type: Type.OBJECT,
-                    properties: {
-                      top: { type: Type.NUMBER },
-                      left: { type: Type.NUMBER },
-                      width: { type: Type.NUMBER },
-                      height: { type: Type.NUMBER },
-                    },
-                  },
-                },
-                required: ['photoId', 'isMatch', 'confidence', 'reason'],
-              },
-            },
-          },
-          required: ['selfieSummary', 'matches'],
-        },
-      },
+    type MatchRow = { photo_id: string; similarity: number; box: PhotoRow['face_box']; face_px: number };
+    const matches = ((data || []) as MatchRow[]).map((m) => {
+      const confidence = similarityToConfidence(Number(m.similarity), FACE_MATCH_THRESHOLD);
+      return {
+        photoId: m.photo_id,
+        confidence,
+        reason: confidence >= 85 ? 'Rosto muito semelhante ao da selfie.' : 'Rosto semelhante ao da selfie.',
+        faceBox: m.box || undefined,
+      };
     });
 
-    const parsed = JSON.parse((response.text ?? '{}').trim());
-    const validIds = new Set(candidates.map((c) => c.id));
-    type RawMatch = { photoId?: string; isMatch?: boolean; confidence?: number; reason?: string; faceBox?: unknown };
-    const matches = (Array.isArray(parsed.matches) ? (parsed.matches as RawMatch[]) : [])
-      // Aceita quando a IA confirma, ou quando a confiança é alta mesmo sem confirmação explícita
-      .filter((m) => m.photoId && validIds.has(m.photoId) && (m.isMatch === true || Number(m.confidence) >= 70))
-      .map((m) => ({
-        photoId: m.photoId as string,
-        // confiança real devolvida pela IA (sem inflar artificialmente)
-        confidence: Math.max(0, Math.min(100, Number((m.confidence ?? 0).toFixed(1)))),
-        reason: m.reason || 'Rosto compatível com a selfie.',
-        faceBox: m.faceBox,
-      }))
-      .sort((a, b) => b.confidence - a.confidence);
+    // Avisa se ainda há fotos do evento que não passaram pela análise facial
+    let pendingQuery = db.from('photos').select('id', { count: 'exact', head: true }).is('faces_indexed_at', null);
+    if (scopedEvent) pendingQuery = pendingQuery.eq('event_id', scopedEvent);
+    const { count: pending } = await pendingQuery;
 
-    console.log(`[busca facial] concluída em ${((Date.now() - started) / 1000).toFixed(1)}s — ${matches.length} foto(s) encontrada(s)`);
-    res.json({ selfieSummary: parsed.selfieSummary || 'Selfie processada.', matches });
+    const seconds = ((Date.now() - started) / 1000).toFixed(1);
+    console.log(`[busca facial] evento=${scopedEvent ?? 'todos'} concluída em ${seconds}s — ${matches.length} foto(s) encontrada(s)`);
+
+    res.json({
+      selfieSummary:
+        (matches.length > 0
+          ? `Comparamos seu rosto com todos os rostos ${scopedEvent ? 'deste evento' : 'dos eventos'} em ${seconds}s.`
+          : 'Nenhuma foto com o seu rosto foi encontrada. Tente outra selfie, de frente e sem óculos escuros, ou busque pelo número de peito.') +
+        (pending ? ` (${pending} foto(s) ainda em análise.)` : ''),
+      pendingPhotos: pending || 0,
+      matches,
+    });
   } catch (err: unknown) {
     console.error('[busca facial] ERRO:', err);
-    res.status(500).json({ error: describeGeminiError(err) });
+    res.status(500).json({ error: 'Falha ao executar a busca facial. Tente novamente.' });
   }
 });
 
@@ -690,7 +639,6 @@ app.post('/api/photos/upload', requireUser, requirePhotographer, async (req: Aut
             }
             if (typeof parsed.faceDescriptor === 'string' && parsed.faceDescriptor.trim()) {
               faceDescriptor = parsed.faceDescriptor;
-              facesCount++;
             }
             if (typeof parsed.caption === 'string' && parsed.caption.trim()) caption = parsed.caption;
             if (!checkpoint && typeof parsed.suggestedCheckpoint === 'string' && parsed.suggestedCheckpoint.trim()) {
@@ -731,7 +679,19 @@ app.post('/api/photos/upload', requireUser, requirePhotographer, async (req: Aut
           .select(PUBLIC_PHOTO_COLUMNS)
           .single();
         if (insertError || !photo) throw insertError || new Error('Falha ao registrar foto.');
-        created.push(photo as unknown as PhotoRow);
+        const photoRow = photo as unknown as PhotoRow;
+
+        // Reconhecimento facial: encontra todos os rostos e grava a impressão digital de cada um
+        try {
+          const faces = await indexPhotoFaces(photoRow.id, eventId, original);
+          facesCount += faces.count;
+          if (faces.largestBox) photoRow.face_box = faces.largestBox;
+          console.log(`[upload] ${photoRow.filename}: ${faces.count} rosto(s) indexado(s)`);
+        } catch (faceErr) {
+          console.error('[upload] Falha na análise facial (foto salva sem rostos; rode "npm run faces:reindex"):', faceErr);
+        }
+
+        created.push(photoRow);
       } catch (fileErr) {
         console.error('Falha em um arquivo do lote:', fileErr);
         failures.push(file.filename || 'arquivo');
