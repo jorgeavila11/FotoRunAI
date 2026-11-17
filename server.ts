@@ -351,6 +351,11 @@ async function ordersForBuyer(buyerId: string) {
 // Rotas públicas
 // ---------------------------------------------------------------------------
 
+// Usado pela hospedagem para saber se o servidor está no ar
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, faceModels: faceModelsAvailable(), gemini: Boolean(ai) });
+});
+
 app.get('/api/bootstrap', async (_req, res) => {
   try {
     const [eventsRes, photosRes] = await Promise.all([

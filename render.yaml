@@ -1,0 +1,27 @@
+# Configuração de hospedagem no Render (https://render.com)
+# No painel do Render: New > Blueprint > escolha o repositório FotoRunAI.
+services:
+  - type: web
+    name: fotorun-ai
+    runtime: node
+    plan: free
+    region: virginia # mais próxima do Brasil entre as opções do Render
+    buildCommand: npm install --include=dev && npm run build && npm run models:download
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      # Os valores abaixo são pedidos na hora de criar o serviço (copie do seu .env)
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
