@@ -9,6 +9,7 @@ import { makeAnalysisImage, previewPublicUrl, signedOriginalUrl, storeEventCover
 import { embedSelfie, faceModelsAvailable, similarityToConfidence, toPgVector } from './server/faces';
 import { indexPhotoFaces, FACE_MATCH_THRESHOLD } from './server/face-index';
 import { decodeDataUrl, normalizeImage } from './server/image-formats';
+import { registerPainelRoutes, markRequestApproved } from './server/painel';
 
 const PORT = Number(process.env.PORT) || 3000;
 // Modelos do Gemini em ordem de preferência. Se um estiver sobrecarregado, lento ou indisponível,
@@ -485,6 +486,8 @@ app.get('/api/me', requireUser, async (req: AuthedRequest, res) => {
       phone: u.profile.phone || '',
       role: u.profile.role === 'admin' ? 'photographer' : u.profile.role,
       isAdmin: u.profile.role === 'admin',
+      // Fotógrafo que ainda não preencheu o cadastro inicial
+      needsOnboarding: u.profile.role !== 'athlete' && !u.profile.onboarded_at,
       bibNumber: u.profile.bib_number || undefined,
       pixKey: u.profile.pix_key || undefined,
     },
@@ -927,6 +930,8 @@ type EventInput = {
   ownerId?: string | null;
   coverImage?: string;
   coverBase64?: string;
+  /** Quando o evento nasce de uma solicitação de fotógrafo */
+  requestId?: string;
 };
 
 /** Valida e converte o formulário do admin em colunas da tabela events. */
@@ -1039,6 +1044,7 @@ app.post('/api/admin/events', requireUser, requireAdmin, async (req, res) => {
 
     const { error } = await db.from('events').insert({ id, ...cols });
     if (error) throw error;
+    if (input.requestId) await markRequestApproved(input.requestId, id);
     res.json({ ok: true, id });
   } catch (err) {
     console.error('Admin create event error:', err);
@@ -1083,6 +1089,8 @@ app.delete('/api/admin/events/:id', requireUser, requireAdmin, async (req, res) 
 });
 
 // ---------------------------------------------------------------------------
+
+registerPainelRoutes(app);
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

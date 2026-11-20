@@ -129,3 +129,19 @@ O valor padrão é **0,36**, a referência do SFace. Rostos pequenos, com menos 
 
 - Óculos escuros, boné cobrindo os olhos, rosto de perfil ou rosto muito pequeno reduzem a semelhança. Nesses casos, a busca por número de peito complementa.
 - Para mais precisão no futuro, dá para trocar só o arquivo `server/faces.ts` por um serviço pago, como o Amazon Rekognition, sem mudar o resto do sistema.
+
+---
+
+# Painel do fotógrafo (Bloco 1)
+
+O painel do fotógrafo ganhou:
+
+- **Seus ganhos:** valores de hoje, dos últimos 7 dias, do mês e desde o começo, com o saldo disponível para saque.
+- **Desempenho mensal:** gráfico dos últimos 12 meses, com opção de comparar com o ano anterior e de ver em tabela.
+- **Vendas por ponto do percurso:** mostra em que ponto da prova as fotos mais vendem e a taxa de conversão de cada ponto.
+- **Solicitar evento:** o fotógrafo pede a inclusão de uma prova. O administrador vê o pedido em **Administração** e aprova, com o formulário já preenchido, ou recusa, informando o motivo.
+- **Cadastro inicial:** quatro perguntas no primeiro acesso: perfil, experiência, cidade e objetivos.
+
+## Ativar
+
+No Supabase, abra **SQL Editor > New query**, cole todo o conteúdo de `supabase/migrations/0004_painel_fotografo.sql` e clique em **Run**.

@@ -12,6 +12,7 @@ import {
   AlertCircle,
   CheckCircle2,
   ExternalLink,
+  Inbox,
 } from 'lucide-react';
 import { apiFetch } from '../lib/supabase';
 
@@ -55,6 +56,23 @@ interface FormState {
   ownerId: string;
   coverImage: string;
   coverBase64: string;
+  /** Preenchido quando o evento nasce de uma solicitação de fotógrafo */
+  requestId: string;
+}
+
+interface EventRequestRow {
+  id: string;
+  title: string;
+  eventDate: string | null;
+  city: string;
+  state: string;
+  location: string;
+  distances: string;
+  notes: string;
+  createdAt: string;
+  photographerId: string;
+  photographerName: string | null;
+  photographerCity: string | null;
 }
 
 const UFS = [
@@ -77,6 +95,7 @@ const EMPTY_FORM: FormState = {
   ownerId: '',
   coverImage: '',
   coverBase64: '',
+  requestId: '',
 };
 
 /** "Corrida de Fortaleza 2026" -> "corrida-de-fortaleza-2026" */
@@ -118,6 +137,16 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [requests, setRequests] = useState<EventRequestRow[]>([]);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
+  const [rejectError, setRejectError] = useState<string | null>(null);
+
+  const loadRequests = useCallback(async () => {
+    const res = await apiFetch('/api/admin/event-requests');
+    const data = await res.json();
+    if (res.ok) setRequests(data.requests);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -139,7 +168,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
 
   useEffect(() => {
     load();
-  }, [load]);
+    loadRequests();
+  }, [load, loadRequests]);
 
   const isCreating = editingId === '';
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((prev) => ({ ...prev, [key]: value }));
@@ -151,6 +181,48 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
     setNotice(null);
     setEditingId('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  /** Abre o formulário de novo evento já preenchido com os dados da solicitação. */
+  const openFromRequest = (r: EventRequestRow) => {
+    setForm({
+      ...EMPTY_FORM,
+      id: slugify(r.title),
+      title: r.title,
+      eventDate: r.eventDate || '',
+      city: r.city,
+      state: r.state,
+      location: r.location,
+      distances: r.distances,
+      ownerId: r.photographerId,
+      requestId: r.id,
+    });
+    setSlugTouched(false);
+    setFormError(null);
+    setNotice(null);
+    setEditingId('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleReject = async (r: EventRequestRow) => {
+    setRejectError(null);
+    if (!rejectNote.trim()) {
+      setRejectError('Escreva o motivo; o fotógrafo vai ver essa mensagem.');
+      return;
+    }
+    const res = await apiFetch(`/api/admin/event-requests/${r.id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ note: rejectNote }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setRejectError(data.error || 'Não foi possível recusar.');
+      return;
+    }
+    setRejectingId(null);
+    setRejectNote('');
+    setNotice(`Solicitação "${r.title}" recusada. O fotógrafo verá o motivo no painel dele.`);
+    loadRequests();
   };
 
   const openEdit = (ev: AdminEvent) => {
@@ -169,6 +241,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
       ownerId: ev.ownerId || '',
       coverImage: ev.coverImage,
       coverBase64: '',
+      requestId: '',
     });
     setSlugTouched(true);
     setFormError(null);
@@ -220,6 +293,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
       ownerId: form.ownerId || null,
       coverImage: form.coverImage,
       ...(form.coverBase64 ? { coverBase64: form.coverBase64 } : {}),
+      ...(isCreating && form.requestId ? { requestId: form.requestId } : {}),
     };
 
     setSaving(true);
@@ -230,9 +304,14 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setNotice(isCreating ? `Evento "${form.title}" criado!` : `Evento "${form.title}" atualizado!`);
+      setNotice(
+        isCreating
+          ? `Evento "${form.title}" criado!${form.requestId ? ' A solicitação foi marcada como aprovada e o fotógrafo já pode enviar fotos.' : ''}`
+          : `Evento "${form.title}" atualizado!`
+      );
       setEditingId(null);
       await load();
+      if (form.requestId) loadRequests();
       onEventsChanged();
     } catch (err) {
       setFormError(err instanceof Error && err.message ? err.message : 'Não foi possível salvar.');
@@ -290,7 +369,9 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
       {editingId !== null && (
         <form onSubmit={handleSave} className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-extrabold text-[#0F172A]">{isCreating ? 'Novo evento' : `Editar: ${form.title}`}</h2>
+            <h2 className="text-lg font-extrabold text-[#0F172A]">
+              {isCreating ? (form.requestId ? 'Aprovar solicitação: novo evento' : 'Novo evento') : `Editar: ${form.title}`}
+            </h2>
             <button
               type="button"
               onClick={() => setEditingId(null)}
@@ -506,6 +587,78 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
             </button>
           </div>
         </form>
+      )}
+
+      {/* SOLICITAÇÕES DE FOTÓGRAFOS */}
+      {requests.length > 0 && (
+        <section className="bg-amber-50/60 border border-amber-200 rounded-2xl p-5 space-y-3">
+          <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+            <Inbox className="w-4 h-4 text-amber-700" /> Solicitações de fotógrafos ({requests.length})
+          </h2>
+          <ul className="space-y-3">
+            {requests.map((r) => (
+              <li key={r.id} className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-bold text-[#0F172A]">{r.title}</p>
+                    <p className="text-xs text-slate-600">
+                      {formatDate(r.eventDate)} · {r.city} - {r.state}
+                      {r.distances ? ` · ${r.distances}` : ''}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Pedido por <strong>{r.photographerName || 'fotógrafo'}</strong>
+                      {r.photographerCity ? ` (${r.photographerCity})` : ''} em{' '}
+                      {new Date(r.createdAt).toLocaleDateString('pt-BR')}
+                    </p>
+                    {r.notes && <p className="mt-1 text-xs text-slate-700 whitespace-pre-line">“{r.notes}”</p>}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openFromRequest(r)}
+                      className="px-3 py-2 rounded-lg bg-[#10B981] hover:bg-emerald-600 text-white text-sm font-bold"
+                    >
+                      Aprovar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRejectingId(rejectingId === r.id ? null : r.id);
+                        setRejectNote('');
+                        setRejectError(null);
+                      }}
+                      className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold text-red-600 hover:bg-red-50"
+                    >
+                      Recusar
+                    </button>
+                  </div>
+                </div>
+                {rejectingId === r.id && (
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <label className={labelClass} htmlFor={`rej-${r.id}`}>Motivo da recusa (o fotógrafo verá)</label>
+                    <textarea
+                      id={`rej-${r.id}`}
+                      rows={2}
+                      maxLength={300}
+                      className={inputClass}
+                      value={rejectNote}
+                      onChange={(e) => setRejectNote(e.target.value)}
+                      placeholder="Ex.: este evento já está cadastrado como “Corrida de Sobral 2026”."
+                    />
+                    {rejectError && <p className="text-xs text-red-700">{rejectError}</p>}
+                    <button
+                      type="button"
+                      onClick={() => handleReject(r)}
+                      className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-bold"
+                    >
+                      Confirmar recusa
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {/* LISTA */}

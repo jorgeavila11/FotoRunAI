@@ -23,6 +23,7 @@ import { HomeView } from './components/HomeView';
 import { EventGalleryView } from './components/EventGalleryView';
 import { PhotographerDashboardView } from './components/PhotographerDashboardView';
 import { AdminEventsView } from './components/AdminEventsView';
+import { PhotographerOnboarding } from './components/PhotographerOnboarding';
 import { CheckoutModal } from './components/CheckoutModal';
 import { DownloadsView } from './components/DownloadsView';
 import { AuthModal } from './components/AuthModal';
@@ -91,6 +92,8 @@ export default function App() {
     targetPhotoIds: [],
   });
 
+  // Cadastro inicial do fotógrafo: "Agora não" esconde até o próximo acesso
+  const [onboardingSkipped, setOnboardingSkipped] = useState(false);
   const [authModalState, setAuthModalState] = useState<{
     isOpen: boolean;
     initialRole: UserRole;
@@ -471,6 +474,14 @@ export default function App() {
       </main>
 
       <Footer onNavigate={handleNavigate} onOpenAuth={handleOpenAuth} />
+
+      {activeView === 'photographer' && currentUser?.role === 'photographer' && currentUser.needsOnboarding && !onboardingSkipped && (
+        <PhotographerOnboarding
+          name={currentUser.name}
+          onDone={() => loadMe()}
+          onSkip={() => setOnboardingSkipped(true)}
+        />
+      )}
 
       {checkoutState.isOpen && activeEvent && (
         <CheckoutModal

@@ -9,6 +9,7 @@ import {
   Shield,
   Receipt,
   AlertCircle,
+  CalendarPlus,
 } from 'lucide-react';
 import {
   EventItem,
@@ -19,6 +20,8 @@ import {
 } from '../types';
 import { SEEDED_IMAGES } from '../data/assets';
 import { apiFetch } from '../lib/supabase';
+import { PhotographerInsights } from './PhotographerInsights';
+import { EventRequestsPanel } from './EventRequestsPanel';
 
 interface PhotographerDashboardViewProps {
   events: EventItem[];
@@ -85,6 +88,11 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
 
   const [payoutLoading, setPayoutLoading] = useState(false);
   const [payoutMsg, setPayoutMsg] = useState<string | null>(null);
+  // Recarrega os indicadores depois de envios e saques
+  const [insightsKey, setInsightsKey] = useState(0);
+  // Abre o formulário de solicitação de evento
+  const [requestSignal, setRequestSignal] = useState(0);
+  const uploadSectionRef = useRef<HTMLElement>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -145,6 +153,7 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
         photographerStats: data.photographerStats,
       });
       setBatchName('');
+      setInsightsKey((k) => k + 1);
       setUploadStatusMsg(
         `${data.uploadedCount} foto(s) publicada(s) e indexada(s) na galeria de ${selectedEvent?.title}!` +
           (data.failed?.length ? ` ${data.failed.length} arquivo(s) falharam: ${data.failed.join(', ')}.` : '')
@@ -202,6 +211,7 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
       if (res.ok) {
         onPayoutDone(data.photographerStats, data.message);
         setPayoutMsg(data.message);
+        setInsightsKey((k) => k + 1);
       } else {
         setPayoutMsg(data.error || 'Não foi possível solicitar o saque.');
       }
@@ -241,6 +251,15 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
 
           <button
             type="button"
+            onClick={() => setRequestSignal((n) => n + 1)}
+            className="px-4 py-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-[#0F172A] text-sm font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap"
+          >
+            <CalendarPlus className="w-4 h-4" />
+            <span>Solicitar evento</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleRequestPayout}
             disabled={payoutLoading || stats.availablePixBalance <= 0}
             className="px-5 py-2.5 rounded-lg bg-[#10B981] hover:bg-emerald-600 disabled:opacity-50 text-white text-sm font-bold inline-flex items-center gap-2 transition-colors whitespace-nowrap"
@@ -263,49 +282,20 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
         </div>
       )}
 
-      {/* KPI GRID */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-1">
-          <p className="text-xs font-semibold text-slate-500">Fotos Enviadas</p>
-          <p className="text-2xl font-extrabold text-[#0F172A] font-mono-num">
-            {stats.totalPhotosUploaded.toLocaleString('pt-BR')}
-          </p>
-          <p className="text-xs text-slate-500">JPG / PNG alta resolução</p>
-        </div>
+      {/* VISÃO GERAL: ganhos por período, desempenho mensal e vendas por ponto do percurso */}
+      <PhotographerInsights refreshKey={insightsKey} />
 
-        <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-1">
-          <p className="text-xs font-semibold text-[#006577]">Indexadas por IA</p>
-          <p className="text-2xl font-extrabold text-[#0F172A] font-mono-num">100%</p>
-          <p className="text-xs text-slate-500">Rostos e dorsais mapeados</p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-1">
-          <p className="text-xs font-semibold text-slate-500">Fotos Vendidas</p>
-          <p className="text-2xl font-extrabold text-[#D04400] font-mono-num">
-            {stats.totalSold.toLocaleString('pt-BR')}
-          </p>
-          <p className="text-xs text-slate-500">Individuais e pacotes</p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-1">
-          <p className="text-xs font-semibold text-slate-500">Faturamento Bruto</p>
-          <p className="text-2xl font-extrabold text-[#0F172A] font-mono-num">
-            R$ {stats.grossRevenue.toFixed(2).replace('.', ',')}
-          </p>
-          <p className="text-xs text-slate-500">Taxa FotoRun fixa de 15%</p>
-        </div>
-
-        <div className="bg-[#0F172A] text-white rounded-xl border border-slate-800 p-5 space-y-1">
-          <p className="text-xs font-semibold text-[#38BDF8]">Saldo Líquido Pix (85%)</p>
-          <p className="text-2xl font-extrabold font-mono-num">
-            R$ {stats.availablePixBalance.toFixed(2).replace('.', ',')}
-          </p>
-          <p className="text-xs text-slate-300">Disponível para saque imediato</p>
-        </div>
-      </section>
+      {/* SOLICITAÇÕES DE EVENTO */}
+      <EventRequestsPanel
+        openSignal={requestSignal}
+        onUseEvent={(eventId) => {
+          setTargetEventId(eventId);
+          uploadSectionRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }}
+      />
 
       {/* MASSIVE UPLOAD & AI INDEXING SECTION */}
-      <section className="bg-white rounded-xl border border-slate-200 p-6 space-y-6">
+      <section ref={uploadSectionRef} className="bg-white rounded-xl border border-slate-200 p-6 space-y-6 scroll-mt-24">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
             <h2 className="text-lg font-bold text-[#0F172A] flex items-center gap-2">

@@ -115,6 +115,8 @@ export interface AuthUser {
   role: UserRole;
   /** Administrador da plataforma (cria e edita eventos) */
   isAdmin?: boolean;
+  /** Fotógrafo que ainda não preencheu o cadastro inicial */
+  needsOnboarding?: boolean;
   bibNumber?: string;
   pixKey?: string;
 }

@@ -41,6 +41,7 @@ export interface Profile {
   individual_price: number;
   watermark_text: string;
   watermark_opacity: number;
+  onboarded_at?: string | null;
 }
 
 export interface AuthedRequest extends Request {
