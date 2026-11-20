@@ -145,3 +145,20 @@ O painel do fotógrafo ganhou:
 ## Ativar
 
 No Supabase, abra **SQL Editor > New query**, cole todo o conteúdo de `supabase/migrations/0004_painel_fotografo.sql` e clique em **Run**.
+
+---
+
+# Categorias de evento
+
+Cada evento agora tem uma **categoria**: corrida de rua (o padrão), trail, ciclismo, MTB, triatlo, natação, caminhada, outros esportes ou passeios e turismo.
+
+- Os eventos que já existiam ficam automaticamente como **corrida de rua**. Nada muda para eles.
+- Em categorias **sem número de peito**, como passeios e turismo:
+  - a galeria esconde a busca por número;
+  - o servidor não chama o Gemini para ler números (economiza uso da IA);
+  - os textos se adaptam, por exemplo "Local do passeio" no lugar de "Ponto do percurso".
+- A lista de categorias fica em `src/data/categories.ts`. Para criar uma nova, adicione-a nesse arquivo e na regra (constraint) da coluna `category` no banco.
+
+## Ativar
+
+No Supabase, abra **SQL Editor > New query**, cole todo o conteúdo de `supabase/migrations/0005_categorias.sql` e clique em **Run**.

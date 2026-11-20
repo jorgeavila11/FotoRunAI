@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getCategory } from '../data/categories';
 import {
   Camera,
   Hash,
@@ -44,7 +45,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
       ev.title.toLowerCase().includes(q) ||
       ev.city.toLowerCase().includes(q) ||
       ev.state.toLowerCase().includes(q) ||
-      ev.distances.toLowerCase().includes(q);
+      ev.distances.toLowerCase().includes(q) ||
+      getCategory(ev.category).label.toLowerCase().includes(q);
     return matchesCity && matchesQuery;
   });
 
@@ -140,7 +142,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
                   <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-white text-xs font-medium">
-                    <span>{ev.distances}</span>
+                    <span>{[getCategory(ev.category).label, ev.distances].filter(Boolean).join(' · ')}</span>
                     <span className="font-mono-num">{ev.totalArchivePhotos.toLocaleString('pt-BR')} fotos</span>
                   </div>
                 </div>
@@ -453,7 +455,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-transparent" />
                   <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-white text-xs font-medium">
-                    <span>{ev.distances}</span>
+                    <span>{[getCategory(ev.category).label, ev.distances].filter(Boolean).join(' · ')}</span>
                     <span className="font-mono-num">{ev.totalArchivePhotos.toLocaleString('pt-BR')} fotos</span>
                   </div>
                 </div>

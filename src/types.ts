@@ -26,6 +26,8 @@ export interface EventItem {
   checkpoints: string[];
   status: 'disponivel' | 'em_breve';
   packPrice?: number;
+  /** Categoria do evento (ver src/data/categories.ts) */
+  category?: string;
 }
 
 export interface PhotoItem {

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CalendarPlus, X, Loader2, Clock, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { apiFetch } from '../lib/supabase';
+import { EVENT_CATEGORIES, DEFAULT_CATEGORY, getCategory } from '../data/categories';
 
 export interface EventRequest {
   id: string;
@@ -15,6 +16,7 @@ export interface EventRequest {
   adminNote: string | null;
   eventId: string | null;
   createdAt: string;
+  category?: string;
 }
 
 export const UFS = [
@@ -26,7 +28,7 @@ const inputClass =
   'w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-[#0F172A] focus:outline-none focus:border-[#D04400]';
 const labelClass = 'block text-xs font-semibold text-slate-700 mb-1';
 
-const EMPTY = { title: '', eventDate: '', city: '', state: '', location: '', distances: '', notes: '' };
+const EMPTY = { title: '', category: DEFAULT_CATEGORY, eventDate: '', city: '', state: '', location: '', distances: '', notes: '' };
 
 const STATUS = {
   pendente: { label: 'Aguardando análise', icon: Clock, cls: 'bg-amber-100 text-amber-800' },
@@ -140,6 +142,7 @@ export const EventRequestsPanel: React.FC<Props> = ({ openSignal = 0, onUseEvent
                 <div className="min-w-0">
                   <p className="font-semibold text-[#0F172A] text-sm">{r.title}</p>
                   <p className="text-xs text-slate-500">
+                    {getCategory(r.category).label} ·{' '}
                     {r.eventDate ? new Date(`${r.eventDate}T12:00:00`).toLocaleDateString('pt-BR') : 'Data a definir'} · {r.city} - {r.state}
                   </p>
                   {r.status === 'recusado' && r.adminNote && (
@@ -177,8 +180,16 @@ export const EventRequestsPanel: React.FC<Props> = ({ openSignal = 0, onUseEvent
             </div>
 
             <div>
-              <label className={labelClass} htmlFor="rq-title">Nome da prova *</label>
+              <label className={labelClass} htmlFor="rq-title">Nome do evento *</label>
               <input id="rq-title" className={inputClass} value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Corrida Municipal de Sobral 2026" required />
+            </div>
+            <div>
+              <label className={labelClass} htmlFor="rq-cat">Categoria *</label>
+              <select id="rq-cat" className={inputClass} value={form.category} onChange={(e) => set('category', e.target.value)}>
+                {EVENT_CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

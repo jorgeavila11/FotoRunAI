@@ -6,6 +6,7 @@
  */
 import type { Express } from 'express';
 import { db, requireUser, requirePhotographer, requireAdmin, AuthedRequest } from './supabase';
+import { DEFAULT_CATEGORY, isValidCategory } from '../src/data/categories';
 
 const TZ = 'America/Sao_Paulo';
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -172,6 +173,7 @@ function toRequest(r: {
   created_at: string;
   decided_at: string | null;
   photographer_id: string;
+  category?: string | null;
   profiles?: { full_name: string; city: string | null; state: string | null } | null;
 }) {
   return {
@@ -189,6 +191,7 @@ function toRequest(r: {
     createdAt: r.created_at,
     decidedAt: r.decided_at,
     photographerId: r.photographer_id,
+    category: r.category || DEFAULT_CATEGORY,
     photographerName: r.profiles?.full_name || null,
     photographerCity: r.profiles?.city ? `${r.profiles.city}${r.profiles.state ? ` - ${r.profiles.state}` : ''}` : null,
   };
@@ -272,6 +275,7 @@ export function registerPainelRoutes(app: Express) {
         location: clean(b.location, 160),
         distances: clean(b.distances, 80),
         notes: clean(b.notes, 500),
+        category: isValidCategory(b.category) ? b.category : DEFAULT_CATEGORY,
       })
       .select('*')
       .single();

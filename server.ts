@@ -10,6 +10,7 @@ import { embedSelfie, faceModelsAvailable, similarityToConfidence, toPgVector } 
 import { indexPhotoFaces, FACE_MATCH_THRESHOLD } from './server/face-index';
 import { decodeDataUrl, normalizeImage } from './server/image-formats';
 import { registerPainelRoutes, markRequestApproved } from './server/painel';
+import { getCategory, isValidCategory } from './src/data/categories';
 
 const PORT = Number(process.env.PORT) || 3000;
 // Modelos do Gemini em ordem de preferência. Se um estiver sobrecarregado, lento ou indisponível,
@@ -388,6 +389,7 @@ app.get('/api/bootstrap', async (_req, res) => {
         totalVideos: ofEvent.filter((p) => p.media_type === 'video').length,
         checkpoints: e.checkpoints || [],
         status: e.status,
+        category: e.category || 'corrida_rua',
         packPrice: Number(e.pack_price),
       };
     });
@@ -561,7 +563,7 @@ app.post('/api/photos/upload', requireUser, requirePhotographer, async (req: Aut
       return res.status(400).json({ error: `Envie no máximo ${MAX_FILES_PER_UPLOAD} fotos por vez.` });
     }
 
-    const { data: eventObj } = await db.from('events').select('id, checkpoints').eq('id', eventId).maybeSingle();
+    const { data: eventObj } = await db.from('events').select('id, checkpoints, category').eq('id', eventId).maybeSingle();
     if (!eventObj) return res.status(404).json({ error: 'Evento não encontrado.' });
 
     const { data: batch, error: batchError } = await db
@@ -603,7 +605,8 @@ app.post('/api/photos/upload', requireUser, requirePhotographer, async (req: Aut
         let detectedCheckpoint = checkpoint || eventObj.checkpoints?.[0] || 'Percurso';
         let faceBox: PhotoRow['face_box'] = null;
 
-        if (ai) {
+        // A leitura do número de peito pelo Gemini só roda em categorias que têm número (ex.: não em passeios)
+        if (ai && getCategory(eventObj.category).usesBib) {
           try {
             const analysis = await makeAnalysisImage(original);
             const response = await generateWithFallback('upload', {
@@ -932,6 +935,7 @@ type EventInput = {
   coverBase64?: string;
   /** Quando o evento nasce de uma solicitação de fotógrafo */
   requestId?: string;
+  category?: string;
 };
 
 /** Valida e converte o formulário do admin em colunas da tabela events. */
@@ -967,6 +971,10 @@ async function eventColumns(input: EventInput, creating: boolean) {
   if (input.packPrice !== undefined) {
     if (!(typeof input.packPrice === 'number' && input.packPrice > 0)) errors.push('Preço do pacote inválido.');
     else cols.pack_price = round2(input.packPrice);
+  }
+  if (input.category !== undefined) {
+    if (!isValidCategory(input.category)) errors.push('Categoria inválida.');
+    else cols.category = input.category;
   }
   if (input.status !== undefined) {
     if (!['disponivel', 'em_breve'].includes(input.status)) errors.push('Status inválido.');
@@ -1007,6 +1015,7 @@ app.get('/api/admin/events', requireUser, requireAdmin, async (_req, res) => {
       checkpoints: e.checkpoints || [],
       packPrice: Number(e.pack_price),
       status: e.status,
+      category: e.category || 'corrida_rua',
       ownerId: e.owner_id,
       ownerName: e.profiles?.full_name || null,
       coverImage: e.cover_image,

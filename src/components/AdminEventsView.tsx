@@ -15,6 +15,7 @@ import {
   Inbox,
 } from 'lucide-react';
 import { apiFetch } from '../lib/supabase';
+import { EVENT_CATEGORIES, DEFAULT_CATEGORY, getCategory } from '../data/categories';
 
 interface AdminEvent {
   id: string;
@@ -28,6 +29,7 @@ interface AdminEvent {
   checkpoints: string[];
   packPrice: number;
   status: 'disponivel' | 'em_breve';
+  category: string;
   ownerId: string | null;
   ownerName: string | null;
   coverImage: string;
@@ -53,6 +55,7 @@ interface FormState {
   checkpointsText: string;
   packPrice: string;
   status: 'disponivel' | 'em_breve';
+  category: string;
   ownerId: string;
   coverImage: string;
   coverBase64: string;
@@ -73,6 +76,7 @@ interface EventRequestRow {
   photographerId: string;
   photographerName: string | null;
   photographerCity: string | null;
+  category: string;
 }
 
 const UFS = [
@@ -89,9 +93,10 @@ const EMPTY_FORM: FormState = {
   location: '',
   distances: '',
   officialAgency: '',
-  checkpointsText: 'Largada\nLinha de Chegada\nPódio & Premiação',
+  checkpointsText: getCategory(DEFAULT_CATEGORY).defaultCheckpoints.join('\n'),
   packPrice: '39,90',
   status: 'em_breve',
+  category: DEFAULT_CATEGORY,
   ownerId: '',
   coverImage: '',
   coverBase64: '',
@@ -196,6 +201,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
       distances: r.distances,
       ownerId: r.photographerId,
       requestId: r.id,
+      category: r.category || DEFAULT_CATEGORY,
+      checkpointsText: getCategory(r.category).defaultCheckpoints.join('\n'),
     });
     setSlugTouched(false);
     setFormError(null);
@@ -238,6 +245,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
       checkpointsText: ev.checkpoints.join('\n'),
       packPrice: ev.packPrice.toFixed(2).replace('.', ','),
       status: ev.status,
+      category: ev.category || DEFAULT_CATEGORY,
       ownerId: ev.ownerId || '',
       coverImage: ev.coverImage,
       coverBase64: '',
@@ -290,6 +298,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
       checkpoints: form.checkpointsText.split('\n').map((c) => c.trim()).filter(Boolean),
       packPrice: price,
       status: form.status,
+      category: form.category,
       ownerId: form.ownerId || null,
       coverImage: form.coverImage,
       ...(form.coverBase64 ? { coverBase64: form.coverBase64 } : {}),
@@ -420,8 +429,38 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
                 </p>
               </div>
 
+              <div className="sm:col-span-2">
+                <label className={labelClass} htmlFor="ev-category">Categoria *</label>
+                <select
+                  id="ev-category"
+                  className={inputClass}
+                  value={form.category}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setForm((prev) => {
+                      // Troca os pontos sugeridos se o admin ainda não mexeu neles
+                      const untouched = prev.checkpointsText.trim() === getCategory(prev.category).defaultCheckpoints.join('\n');
+                      return {
+                        ...prev,
+                        category: next,
+                        checkpointsText: untouched ? getCategory(next).defaultCheckpoints.join('\n') : prev.checkpointsText,
+                      };
+                    });
+                  }}
+                >
+                  {EVENT_CATEGORIES.map((c) => (
+                    <option key={c.id} value={c.id}>{c.label}</option>
+                  ))}
+                </select>
+                {!getCategory(form.category).usesBib && (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Esta categoria não usa número de peito: a busca será só por rosto e pelo local do passeio.
+                  </p>
+                )}
+              </div>
+
               <div>
-                <label className={labelClass} htmlFor="ev-date">Data da prova</label>
+                <label className={labelClass} htmlFor="ev-date">Data do evento</label>
                 <input
                   id="ev-date"
                   type="date"
@@ -432,7 +471,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
               </div>
 
               <div>
-                <label className={labelClass} htmlFor="ev-distances">Distâncias</label>
+                <label className={labelClass} htmlFor="ev-distances">{getCategory(form.category).usesBib ? 'Distâncias' : 'Duração / modalidade'}</label>
                 <input
                   id="ev-distances"
                   className={inputClass}
@@ -458,7 +497,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
               </div>
 
               <div className="sm:col-span-2">
-                <label className={labelClass} htmlFor="ev-location">Local da largada</label>
+                <label className={labelClass} htmlFor="ev-location">{getCategory(form.category).usesBib ? 'Local da largada' : 'Ponto de encontro'}</label>
                 <input
                   id="ev-location"
                   className={inputClass}
@@ -518,7 +557,9 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
               </div>
 
               <div className="sm:col-span-2">
-                <label className={labelClass} htmlFor="ev-checkpoints">Pontos de foto do percurso (um por linha)</label>
+                <label className={labelClass} htmlFor="ev-checkpoints">
+                  Onde haverá fotógrafos (um por linha)
+                </label>
                 <textarea
                   id="ev-checkpoints"
                   rows={4}
@@ -526,7 +567,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
                   value={form.checkpointsText}
                   onChange={(e) => set('checkpointsText', e.target.value)}
                 />
-                <p className="mt-1 text-[11px] text-slate-500">Aparecem como filtros na galeria e como opção no envio de fotos.</p>
+                <p className="mt-1 text-[11px] text-slate-500">Cada linha vira um filtro de “{getCategory(form.category).checkpointLabel.toLowerCase()}” na galeria e uma opção no envio de fotos.</p>
               </div>
             </div>
 
@@ -602,7 +643,7 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
                   <div className="min-w-0">
                     <p className="font-bold text-[#0F172A]">{r.title}</p>
                     <p className="text-xs text-slate-600">
-                      {formatDate(r.eventDate)} · {r.city} - {r.state}
+                      {getCategory(r.category).label} · {formatDate(r.eventDate)} · {r.city} - {r.state}
                       {r.distances ? ` · ${r.distances}` : ''}
                     </p>
                     <p className="text-xs text-slate-500">
@@ -695,6 +736,9 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
                     }`}
                   >
                     {ev.status === 'disponivel' ? 'Disponível' : 'Em breve'}
+                  </span>
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                    {getCategory(ev.category).label}
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-1">

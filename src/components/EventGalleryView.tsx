@@ -18,6 +18,7 @@ import {
   Loader2,
   AlertCircle,
 } from 'lucide-react';
+import { getCategory } from '../data/categories';
 import { EventItem, FacialMatchResult, PhotoItem, PricingConfig } from '../types';
 import { SAMPLE_SELFIES, SEEDED_IMAGES } from '../data/assets';
 
@@ -214,6 +215,8 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
   };
 
   const eventPhotos = photos.filter((p) => p.eventId === activeEvent.id);
+  // Categoria define se há número de peito e como chamar os pontos de foto
+  const category = getCategory(activeEvent.category);
   const photographers = Array.from(new Set(eventPhotos.map((p) => p.photographer)));
   const matchMap = new Map<string, FacialMatchResult>(
     (facialMatches || []).map((m) => [m.photoId, m])
@@ -313,7 +316,7 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
             <p className="text-xl font-extrabold font-mono-num mt-0.5 text-[#38BDF8]">
               {activeEvent.totalVideos.toLocaleString('pt-BR')}
             </p>
-            <p className="text-[11px] text-slate-300">Clipes 4K de chegada</p>
+            <p className="text-[11px] text-slate-300">{category.usesBib ? 'Clipes 4K de chegada' : 'Clipes em vídeo'}</p>
           </div>
         </div>
       </section>
@@ -329,7 +332,7 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
               Encontre suas fotos instantaneamente enviando uma selfie
             </h2>
             <p className="text-sm sm:text-base text-slate-300 max-w-2xl leading-relaxed">
-              Tire uma foto pela câmera ou envie uma imagem do seu rosto. Nossa IA compara sua biometria facial com todos os registros da prova em segundos.
+              Tire uma foto pela câmera ou envie uma imagem do seu rosto. Nossa IA compara sua biometria facial com todos os registros do evento em segundos.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -370,6 +373,7 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
             </div>
 
             {/* Instant sample tests */}
+            {category.usesBib && (
             <div className="pt-3 border-t border-white/10 space-y-2">
               <p className="text-xs text-slate-400 font-medium">
                 Ou teste agora com um corredor da prova:
@@ -394,6 +398,7 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
                 ))}
               </div>
             </div>
+            )}
           </div>
 
           {/* Right Scanner Preview */}
@@ -496,6 +501,7 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
         {/* Secondary Traditional Filters */}
         <div className="pt-5 border-t border-white/10">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
+            {category.usesBib && (
             <div className="lg:col-span-4">
               <label htmlFor="bib-search" className="block text-xs font-semibold text-slate-300 mb-1">
                 Número de Peito (Bib Number)
@@ -509,10 +515,11 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
                 className="w-full px-3.5 py-2.5 rounded-lg bg-white text-[#0F172A] placeholder:text-slate-400 text-sm font-mono-num font-bold focus:outline-none focus:ring-2 focus:ring-[#D04400]"
               />
             </div>
+            )}
 
-            <div className="lg:col-span-3">
+            <div className={category.usesBib ? 'lg:col-span-3' : 'lg:col-span-5'}>
               <label htmlFor="checkpoint-select" className="block text-xs font-semibold text-slate-300 mb-1">
-                Ponto de Passagem
+                {category.checkpointLabel}
               </label>
               <select
                 id="checkpoint-select"
@@ -520,7 +527,7 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
                 onChange={(e) => setCheckpointFilter(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-lg bg-white text-[#0F172A] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#D04400]"
               >
-                <option value="all">Todos os Pontos</option>
+                <option value="all">Todos</option>
                 {activeEvent.checkpoints.map((cp) => (
                   <option key={cp} value={cp}>
                     {cp}
@@ -529,7 +536,7 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
               </select>
             </div>
 
-            <div className="lg:col-span-3">
+            <div className={category.usesBib ? 'lg:col-span-3' : 'lg:col-span-5'}>
               <label htmlFor="time-select" className="block text-xs font-semibold text-slate-300 mb-1">
                 Horário Aproximado
               </label>
@@ -540,9 +547,19 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
                 className="w-full px-3 py-2.5 rounded-lg bg-white text-[#0F172A] text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#D04400]"
               >
                 <option value="all">Qualquer horário</option>
-                <option value="t1">06:00 - 06:45 (Pelotão Elite)</option>
-                <option value="t2">06:45 - 07:30 (Pelotão Geral)</option>
-                <option value="t3">07:30 - 08:30 (Chegada & Pódio)</option>
+                {category.usesBib ? (
+                  <>
+                    <option value="t1">06:00 - 06:45 (Pelotão Elite)</option>
+                    <option value="t2">06:45 - 07:30 (Pelotão Geral)</option>
+                    <option value="t3">07:30 - 08:30 (Chegada & Pódio)</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="t1">Início</option>
+                    <option value="t2">Meio</option>
+                    <option value="t3">Final</option>
+                  </>
+                )}
               </select>
             </div>
 
@@ -570,7 +587,7 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
       <section className="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="space-y-1">
           <p className="text-xs font-bold uppercase tracking-wider text-[#D04400]">
-            Pacote Atleta Completo · Economize até 70%
+            {category.usesBib ? 'Pacote Atleta Completo' : 'Pacote Completo'} · Economize até 70%
           </p>
           <h3 className="text-lg font-extrabold text-[#0F172A]">
             Leve todas as suas fotos de {activeEvent.title} em 300 DPI sem marca d’água
@@ -742,13 +759,17 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
 
                     {/* Top Bib & Match overlays */}
                     <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none">
-                      <span className="bg-[#0F172A]/90 text-[#38BDF8] font-mono-num text-[11px] font-bold px-2 py-0.5 rounded">
-                        {photo.mediaType === 'video'
-                          ? 'VÍDEO 4K'
-                          : photo.bibNumbers.length > 0
-                          ? `BIB #${photo.bibNumbers[0]}`
-                          : 'SEM BIB'}
-                      </span>
+                      {photo.mediaType === 'video' || category.usesBib ? (
+                        <span className="bg-[#0F172A]/90 text-[#38BDF8] font-mono-num text-[11px] font-bold px-2 py-0.5 rounded">
+                          {photo.mediaType === 'video'
+                            ? 'VÍDEO 4K'
+                            : photo.bibNumbers.length > 0
+                            ? `BIB #${photo.bibNumbers[0]}`
+                            : 'SEM BIB'}
+                        </span>
+                      ) : (
+                        <span />
+                      )}
 
                       {matchInfo && (
                         <span className="bg-[#10B981] text-white font-mono-num text-[11px] font-bold px-2 py-0.5 rounded">
