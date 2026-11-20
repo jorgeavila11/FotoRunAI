@@ -11,6 +11,8 @@ import { indexPhotoFaces, FACE_MATCH_THRESHOLD } from './server/face-index';
 import { decodeDataUrl, normalizeImage } from './server/image-formats';
 import { registerPainelRoutes, markRequestApproved } from './server/painel';
 import { getCategory, isValidCategory } from './src/data/categories';
+import { registerPrivacyRoutes } from './server/privacy';
+import { scheduleRetention, addMonths, DOWNLOAD_RETENTION_MONTHS } from './server/retention';
 
 const PORT = Number(process.env.PORT) || 3000;
 // Modelos do Gemini em ordem de preferência. Se um estiver sobrecarregado, lento ou indisponível,
@@ -343,6 +345,7 @@ async function ordersForBuyer(buyerId: string) {
     discountApplied: Number(o.discount),
     createdAt: relativeLabel(o.paid_at || o.created_at),
     unlockedPhotoIds: (o.order_items || []).map((i: { photo_id: string }) => i.photo_id),
+    downloadExpiresAt: o.download_expires_at as string | null,
     // Tempo oficial ainda não integrado com a cronometragem da prova
     officialTime: '--:--:--',
     officialPace: '—',
@@ -363,7 +366,7 @@ app.get('/api/bootstrap', async (_req, res) => {
   try {
     const [eventsRes, photosRes] = await Promise.all([
       db.from('events').select('*').order('event_date', { ascending: false }),
-      db.from('photos').select(PUBLIC_PHOTO_COLUMNS).order('captured_at', { ascending: false }).limit(2000),
+      db.from('photos').select(PUBLIC_PHOTO_COLUMNS).is('hidden_at', null).is('purged_at', null).order('captured_at', { ascending: false }).limit(2000),
     ]);
     if (eventsRes.error) throw eventsRes.error;
     if (photosRes.error) throw photosRes.error;
@@ -452,7 +455,12 @@ app.post('/api/search/facial', async (req, res) => {
     });
 
     // Avisa se ainda há fotos do evento que não passaram pela análise facial
-    let pendingQuery = db.from('photos').select('id', { count: 'exact', head: true }).is('faces_indexed_at', null);
+    let pendingQuery = db
+      .from('photos')
+      .select('id', { count: 'exact', head: true })
+      .is('faces_indexed_at', null)
+      .is('hidden_at', null)
+      .is('purged_at', null);
     if (scopedEvent) pendingQuery = pendingQuery.eq('event_id', scopedEvent);
     const { count: pending } = await pendingQuery;
 
@@ -539,7 +547,7 @@ app.patch('/api/pricing', requireUser, requirePhotographer, async (req: AuthedRe
     await db.from('events').update({ pack_price: effectivePack }).eq('owner_id', u.id);
   }
 
-  const { data: photos } = await db.from('photos').select(PUBLIC_PHOTO_COLUMNS).order('captured_at', { ascending: false }).limit(2000);
+  const { data: photos } = await db.from('photos').select(PUBLIC_PHOTO_COLUMNS).is('hidden_at', null).is('purged_at', null).order('captured_at', { ascending: false }).limit(2000);
   res.json({
     pricing: pricingFromProfile(profile, effectivePack),
     photos: ((photos || []) as unknown as PhotoRow[]).map(toPublicPhoto),
@@ -778,6 +786,8 @@ app.post('/api/orders', requireUser, async (req: AuthedRequest, res) => {
       .from('photos')
       .select('id, photographer_id, price')
       .eq('event_id', eventObj.id)
+      .is('hidden_at', null)
+      .is('purged_at', null)
       .in('id', ids);
     if (!photos || photos.length === 0) return res.status(400).json({ error: 'Fotos não encontradas neste evento.' });
 
@@ -841,6 +851,8 @@ app.post('/api/orders', requireUser, async (req: AuthedRequest, res) => {
       coupon_code: appliedCoupon,
       status: 'pago', // TODO Passo 3: 'pendente' até o webhook do gateway confirmar
       paid_at: now,
+      // Prazo para baixar as fotos (LGPD: os arquivos não ficam guardados para sempre)
+      download_expires_at: addMonths(new Date(now), DOWNLOAD_RETENTION_MONTHS).toISOString(),
     });
     if (orderError) throw orderError;
 
@@ -863,17 +875,22 @@ app.get('/api/orders/:id/downloads', requireUser, async (req: AuthedRequest, res
   const u = req.user!;
   const { data: order } = await db
     .from('orders')
-    .select('id, buyer_id, status, order_items(photo_id, photos(id, filename, original_path))')
+    .select('id, buyer_id, status, download_expires_at, order_items(photo_id, photos(id, filename, original_path, purged_at))')
     .eq('id', req.params.id)
     .maybeSingle();
 
   if (!order || order.buyer_id !== u.id) return res.status(404).json({ error: 'Pedido não encontrado.' });
   if (order.status !== 'pago') return res.status(402).json({ error: 'Pagamento ainda não confirmado.' });
+  if (order.download_expires_at && new Date(order.download_expires_at) < new Date()) {
+    return res.status(410).json({
+      error: `O prazo para baixar estas fotos terminou em ${new Date(order.download_expires_at).toLocaleDateString('pt-BR')}.`,
+    });
+  }
 
-  type Item = { photo_id: string; photos: { id: string; filename: string; original_path: string } | null };
+  type Item = { photo_id: string; photos: { id: string; filename: string; original_path: string; purged_at: string | null } | null };
   const links: Record<string, string> = {};
   for (const item of (order.order_items || []) as unknown as Item[]) {
-    if (!item.photos) continue;
+    if (!item.photos || item.photos.purged_at) continue; // foto removida (prazo ou pedido do titular)
     const name = `${order.id}_${item.photos.filename.replace(/[^\w.\-]+/g, '_')}`;
     links[item.photo_id] = await signedOriginalUrl(item.photos.original_path, name);
   }
@@ -936,6 +953,8 @@ type EventInput = {
   /** Quando o evento nasce de uma solicitação de fotógrafo */
   requestId?: string;
   category?: string;
+  facesRetentionMonths?: number;
+  photosRetentionMonths?: number;
 };
 
 /** Valida e converte o formulário do admin em colunas da tabela events. */
@@ -971,6 +990,16 @@ async function eventColumns(input: EventInput, creating: boolean) {
   if (input.packPrice !== undefined) {
     if (!(typeof input.packPrice === 'number' && input.packPrice > 0)) errors.push('Preço do pacote inválido.');
     else cols.pack_price = round2(input.packPrice);
+  }
+  if (input.facesRetentionMonths !== undefined) {
+    const v = Math.round(Number(input.facesRetentionMonths));
+    if (!(v >= 1 && v <= 36)) errors.push('Prazo das impressões faciais deve ser de 1 a 36 meses.');
+    else cols.faces_retention_months = v;
+  }
+  if (input.photosRetentionMonths !== undefined) {
+    const v = Math.round(Number(input.photosRetentionMonths));
+    if (!(v >= 1 && v <= 60)) errors.push('Prazo das fotos deve ser de 1 a 60 meses.');
+    else cols.photos_retention_months = v;
   }
   if (input.category !== undefined) {
     if (!isValidCategory(input.category)) errors.push('Categoria inválida.');
@@ -1018,6 +1047,8 @@ app.get('/api/admin/events', requireUser, requireAdmin, async (_req, res) => {
       category: e.category || 'corrida_rua',
       ownerId: e.owner_id,
       ownerName: e.profiles?.full_name || null,
+      facesRetentionMonths: e.faces_retention_months ?? 6,
+      photosRetentionMonths: e.photos_retention_months ?? 12,
       coverImage: e.cover_image,
       photoCount: count(photos, e.id),
       orderCount: count(orders, e.id),
@@ -1100,6 +1131,7 @@ app.delete('/api/admin/events/:id', requireUser, requireAdmin, async (req, res) 
 // ---------------------------------------------------------------------------
 
 registerPainelRoutes(app);
+registerPrivacyRoutes(app);
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
@@ -1114,6 +1146,9 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`FotoRun AI server running on http://0.0.0.0:${PORT}`);
   });
+
+  // Limpeza automática de dados vencidos (LGPD)
+  scheduleRetention();
 }
 
 startServer();

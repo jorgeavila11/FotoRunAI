@@ -107,6 +107,8 @@ export interface OrderReceipt {
   unlockedPhotoIds: string[];
   officialTime: string;
   officialPace: string;
+  /** Até quando o atleta pode baixar as fotos deste pedido */
+  downloadExpiresAt?: string | null;
   category: string;
 }
 

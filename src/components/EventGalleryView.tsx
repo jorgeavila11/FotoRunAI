@@ -36,6 +36,8 @@ interface EventGalleryViewProps {
   onBackToEvents: () => void;
   initialOpenFacial?: boolean;
   initialBib?: string;
+  /** Abre o pedido "Remover minhas fotos" (LGPD) */
+  onOpenPrivacy?: () => void;
 }
 
 export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
@@ -52,6 +54,7 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
   onBackToEvents,
   initialOpenFacial = false,
   initialBib = '',
+  onOpenPrivacy,
 }) => {
   const [categoryTab, setCategoryTab] = useState<'all' | 'videos' | 'podium'>('all');
   const [bibQuery, setBibQuery] = useState(initialBib);
@@ -372,6 +375,15 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
               />
             </div>
 
+            {onOpenPrivacy && (
+              <p className="text-[11px] text-slate-400">
+                Não quer aparecer nas fotos?{' '}
+                <button type="button" onClick={onOpenPrivacy} className="underline font-semibold text-slate-300 hover:text-white">
+                  Remover minhas fotos
+                </button>
+              </p>
+            )}
+
             {/* Instant sample tests */}
             {category.usesBib && (
             <div className="pt-3 border-t border-white/10 space-y-2">
@@ -593,7 +605,7 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
             Leve todas as suas fotos de {activeEvent.title} em 300 DPI sem marca d’água
           </h3>
           <p className="text-sm text-slate-600">
-            Inclui liberação instantânea via Pix, download em arquivo ZIP único e acesso vitalício na nuvem.
+            Inclui liberação instantânea via Pix, download em arquivo ZIP único, disponível por 12 meses.
           </p>
         </div>
         <div className="flex items-center gap-4 shrink-0">

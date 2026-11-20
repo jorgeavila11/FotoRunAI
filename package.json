@@ -14,7 +14,8 @@
     "check:gemini": "tsx scripts/check-gemini.ts",
     "models:download": "tsx scripts/download-models.ts",
     "faces:reindex": "tsx scripts/reindex-faces.ts",
-    "faces:test": "tsx scripts/test-faces.ts"
+    "faces:test": "tsx scripts/test-faces.ts",
+    "retention:run": "tsx scripts/run-retention.ts"
   },
   "dependencies": {
     "@google/genai": "^3.3.0",

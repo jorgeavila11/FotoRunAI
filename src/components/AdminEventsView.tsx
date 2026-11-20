@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   ExternalLink,
   Inbox,
+  ShieldCheck,
 } from 'lucide-react';
 import { apiFetch } from '../lib/supabase';
 import { EVENT_CATEGORIES, DEFAULT_CATEGORY, getCategory } from '../data/categories';
@@ -30,6 +31,8 @@ interface AdminEvent {
   packPrice: number;
   status: 'disponivel' | 'em_breve';
   category: string;
+  facesRetentionMonths: number;
+  photosRetentionMonths: number;
   ownerId: string | null;
   ownerName: string | null;
   coverImage: string;
@@ -56,6 +59,8 @@ interface FormState {
   packPrice: string;
   status: 'disponivel' | 'em_breve';
   category: string;
+  facesRetentionMonths: string;
+  photosRetentionMonths: string;
   ownerId: string;
   coverImage: string;
   coverBase64: string;
@@ -97,6 +102,8 @@ const EMPTY_FORM: FormState = {
   packPrice: '39,90',
   status: 'em_breve',
   category: DEFAULT_CATEGORY,
+  facesRetentionMonths: '6',
+  photosRetentionMonths: '12',
   ownerId: '',
   coverImage: '',
   coverBase64: '',
@@ -147,6 +154,33 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
   const [rejectNote, setRejectNote] = useState('');
   const [rejectError, setRejectError] = useState<string | null>(null);
 
+  const [removals, setRemovals] = useState<
+    { id: string; requesterName: string; createdAt: string; photoCount: number; soldCount: number; previews: string[] }[]
+  >([]);
+  const [removalBusy, setRemovalBusy] = useState<string | null>(null);
+
+  const loadRemovals = useCallback(async () => {
+    const res = await apiFetch('/api/admin/removal-requests');
+    const data = await res.json();
+    if (res.ok) setRemovals(data.requests);
+  }, []);
+
+  const decideRemoval = async (id: string, action: 'confirm' | 'restore') => {
+    setRemovalBusy(id);
+    try {
+      const res = await apiFetch(`/api/admin/removal-requests/${id}/${action}`, { method: 'POST', body: '{}' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setNotice(action === 'confirm' ? `Fotos apagadas definitivamente (${data.purged}).` : 'Fotos restauradas na vitrine.');
+      loadRemovals();
+      onEventsChanged();
+    } catch (err) {
+      setNotice(err instanceof Error && err.message ? err.message : 'Não foi possível concluir.');
+    } finally {
+      setRemovalBusy(null);
+    }
+  };
+
   const loadRequests = useCallback(async () => {
     const res = await apiFetch('/api/admin/event-requests');
     const data = await res.json();
@@ -174,7 +208,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
   useEffect(() => {
     load();
     loadRequests();
-  }, [load, loadRequests]);
+    loadRemovals();
+  }, [load, loadRequests, loadRemovals]);
 
   const isCreating = editingId === '';
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((prev) => ({ ...prev, [key]: value }));
@@ -246,6 +281,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
       packPrice: ev.packPrice.toFixed(2).replace('.', ','),
       status: ev.status,
       category: ev.category || DEFAULT_CATEGORY,
+      facesRetentionMonths: String(ev.facesRetentionMonths ?? 6),
+      photosRetentionMonths: String(ev.photosRetentionMonths ?? 12),
       ownerId: ev.ownerId || '',
       coverImage: ev.coverImage,
       coverBase64: '',
@@ -299,6 +336,8 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
       packPrice: price,
       status: form.status,
       category: form.category,
+      facesRetentionMonths: Number(form.facesRetentionMonths),
+      photosRetentionMonths: Number(form.photosRetentionMonths),
       ownerId: form.ownerId || null,
       coverImage: form.coverImage,
       ...(form.coverBase64 ? { coverBase64: form.coverBase64 } : {}),
@@ -556,6 +595,38 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
                 </select>
               </div>
 
+              <fieldset className="sm:col-span-2 grid sm:grid-cols-2 gap-4 rounded-xl border border-slate-200 p-4">
+                <legend className="px-1 text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" /> Prazos de guarda (LGPD)
+                </legend>
+                <div>
+                  <label className={labelClass} htmlFor="ev-faces-ret">Impressões faciais (meses após o evento)</label>
+                  <input
+                    id="ev-faces-ret"
+                    type="number"
+                    min={1}
+                    max={36}
+                    className={`${inputClass} font-mono-num`}
+                    value={form.facesRetentionMonths}
+                    onChange={(e) => set('facesRetentionMonths', e.target.value)}
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">Depois disso a busca por selfie deixa de funcionar neste evento.</p>
+                </div>
+                <div>
+                  <label className={labelClass} htmlFor="ev-photos-ret">Fotos (meses após o evento)</label>
+                  <input
+                    id="ev-photos-ret"
+                    type="number"
+                    min={1}
+                    max={60}
+                    className={`${inputClass} font-mono-num`}
+                    value={form.photosRetentionMonths}
+                    onChange={(e) => set('photosRetentionMonths', e.target.value)}
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">Fotos compradas ficam até acabar o prazo de download do comprador.</p>
+                </div>
+              </fieldset>
+
               <div className="sm:col-span-2">
                 <label className={labelClass} htmlFor="ev-checkpoints">
                   Onde haverá fotógrafos (um por linha)
@@ -628,6 +699,61 @@ export const AdminEventsView: React.FC<AdminEventsViewProps> = ({ onEventsChange
             </button>
           </div>
         </form>
+      )}
+
+      {/* PEDIDOS DE REMOÇÃO (LGPD) */}
+      {removals.length > 0 && (
+        <section className="bg-emerald-50/60 border border-emerald-200 rounded-2xl p-5 space-y-3">
+          <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-700" /> Pedidos de remoção de fotos — LGPD ({removals.length})
+          </h2>
+          <p className="text-xs text-slate-600">
+            As fotos já foram retiradas da vitrine e da busca. Confira se as fotos são mesmo da pessoa e confirme a exclusão
+            definitiva, ou restaure se houve engano.
+          </p>
+          <ul className="space-y-3">
+            {removals.map((r) => (
+              <li key={r.id} className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-bold text-[#0F172A]">{r.requesterName}</p>
+                    <p className="text-xs text-slate-500">
+                      Pedido em {new Date(r.createdAt).toLocaleDateString('pt-BR')} · {r.photoCount} foto(s)
+                      {r.soldCount > 0 && (
+                        <span className="text-amber-700 font-semibold"> · {r.soldCount} já vendida(s) — os compradores perdem o download</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={removalBusy === r.id}
+                      onClick={() => decideRemoval(r.id, 'confirm')}
+                      className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-bold"
+                    >
+                      Confirmar exclusão
+                    </button>
+                    <button
+                      type="button"
+                      disabled={removalBusy === r.id}
+                      onClick={() => decideRemoval(r.id, 'restore')}
+                      className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Restaurar
+                    </button>
+                  </div>
+                </div>
+                {r.previews.length > 0 && (
+                  <div className="flex gap-2 overflow-x-auto">
+                    {r.previews.map((src) => (
+                      <img key={src} src={src} alt="" className="h-20 w-auto rounded-md object-cover" />
+                    ))}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {/* SOLICITAÇÕES DE FOTÓGRAFOS */}

@@ -162,3 +162,23 @@ Cada evento agora tem uma **categoria**: corrida de rua (o padrão), trail, cicl
 ## Ativar
 
 No Supabase, abra **SQL Editor > New query**, cole todo o conteúdo de `supabase/migrations/0005_categorias.sql` e clique em **Run**.
+
+---
+
+## Passo 9 — Prazos de guarda das fotos (LGPD)
+
+1. No Supabase, abra **SQL Editor**, cole o conteúdo de `supabase/migrations/0006_retencao_lgpd.sql` e clique em **Run** (depois da 0004 e da 0005).
+2. Pronto. As regras passam a valer assim:
+
+| O quê | Prazo padrão | Onde muda |
+|---|---|---|
+| Impressões faciais (busca por selfie) | 6 meses após o evento | Administração → Editar evento → "Prazos de guarda (LGPD)" |
+| Fotos não vendidas | 12 meses após o evento | Mesmo lugar |
+| Download das fotos compradas | 12 meses após a compra | Variável `DOWNLOAD_RETENTION_MONTHS` no Render (opcional) |
+
+- Fotos que alguém comprou **não são apagadas** enquanto o comprador ainda pode baixá-las.
+- A limpeza roda sozinha 1 minuto depois que o servidor liga e depois a cada 24 h. No Render grátis o servidor "dorme" sem visitas; ao acordar, a limpeza roda de novo — então nada fica esquecido.
+- Para desligar a limpeza automática: variável `RETENTION_ENABLED=false`.
+- Para ver o que seria apagado sem apagar nada: `npm run retention:run -- --dry-run`. Para rodar na hora: `npm run retention:run`.
+
+**Remover minhas fotos:** no rodapé do site e na busca facial existe o botão "Remover minhas fotos". O atleta entra na conta, envia uma selfie e as fotos dele saem na hora da vitrine e da busca. O pedido aparece no topo de **Administração**, onde você confirma a exclusão definitiva ou restaura (se for engano).

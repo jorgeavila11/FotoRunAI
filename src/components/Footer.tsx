@@ -5,9 +5,10 @@ import { ActiveView } from '../types';
 interface FooterProps {
   onNavigate: (view: ActiveView) => void;
   onOpenAuth: (role?: 'athlete' | 'photographer') => void;
+  onOpenPrivacy: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenAuth }) => {
+export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenAuth, onOpenPrivacy }) => {
   return (
     <footer className="bg-[#0F172A] text-slate-300 border-t border-slate-800 mt-auto">
       <div className="max-w-[1440px] mx-auto px-4 sm:px-8 lg:px-16 py-12">
@@ -56,12 +57,14 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenAuth }) => {
           <div className="md:col-span-4 space-y-2.5">
             <h4 className="text-sm font-semibold text-white">Privacidade e Atendimento</h4>
             <p className="text-sm text-slate-400 leading-relaxed">
-              Sua selfie é processada apenas para comparação biométrica momentânea e não fica exposta publicamente. Dúvidas ou solicitação de remoção facial são atendidas em até 2 horas.
+              Sua selfie é usada só para encontrar suas fotos e não é guardada. Fotos não vendidas são apagadas 12 meses após o evento, e você pode pedir a retirada das suas fotos a qualquer momento.
             </p>
             <div className="pt-1 flex flex-wrap gap-4 text-xs text-slate-400">
               <span>Termos de Uso</span>
               <span>·</span>
-              <span>Proteção Facial (LGPD)</span>
+              <button type="button" onClick={onOpenPrivacy} className="underline hover:text-white">
+                Remover minhas fotos (LGPD)
+              </button>
               <span>·</span>
               <span>Suporte ao Atleta</span>
             </div>

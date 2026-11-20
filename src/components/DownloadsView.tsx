@@ -222,6 +222,12 @@ export const DownloadsView: React.FC<DownloadsViewProps> = ({
             <p className="text-sm sm:text-base text-slate-300">
               {unlockedPhotos.length} arquivo(s) em resolução original 300 DPI desbloqueados sem marca d’água para {latestOrder.athleteName}.
             </p>
+            {latestOrder.downloadExpiresAt && (
+              <p className="text-xs sm:text-sm text-amber-300 font-semibold">
+                Baixe e guarde suas fotos: o download fica disponível até{' '}
+                {new Date(latestOrder.downloadExpiresAt).toLocaleDateString('pt-BR')}.
+              </p>
+            )}
           </div>
 
           <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4 min-w-[260px] space-y-2 text-sm">

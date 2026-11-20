@@ -24,6 +24,7 @@ import { EventGalleryView } from './components/EventGalleryView';
 import { PhotographerDashboardView } from './components/PhotographerDashboardView';
 import { AdminEventsView } from './components/AdminEventsView';
 import { PhotographerOnboarding } from './components/PhotographerOnboarding';
+import { RemoveMyPhotosModal } from './components/RemoveMyPhotosModal';
 import { CheckoutModal } from './components/CheckoutModal';
 import { DownloadsView } from './components/DownloadsView';
 import { AuthModal } from './components/AuthModal';
@@ -94,6 +95,8 @@ export default function App() {
 
   // Cadastro inicial do fotógrafo: "Agora não" esconde até o próximo acesso
   const [onboardingSkipped, setOnboardingSkipped] = useState(false);
+  // Pedido "Remover minhas fotos" (LGPD)
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   const [authModalState, setAuthModalState] = useState<{
     isOpen: boolean;
     initialRole: UserRole;
@@ -376,6 +379,7 @@ export default function App() {
 
             {activeView === 'event' && (
               <EventGalleryView
+                onOpenPrivacy={() => setPrivacyOpen(true)}
                 key={`${activeEvent.id}-${facialInitOptions.nonce}`}
                 events={events}
                 activeEvent={activeEvent}
@@ -473,7 +477,21 @@ export default function App() {
         )}
       </main>
 
-      <Footer onNavigate={handleNavigate} onOpenAuth={handleOpenAuth} />
+      <Footer onNavigate={handleNavigate} onOpenAuth={handleOpenAuth} onOpenPrivacy={() => setPrivacyOpen(true)} />
+
+      {privacyOpen && (
+        <RemoveMyPhotosModal
+          currentUser={currentUser}
+          onClose={() => {
+            setPrivacyOpen(false);
+            fetchBootstrap(); // fotos retiradas somem da vitrine
+          }}
+          onRequireLogin={() => {
+            setPrivacyOpen(false);
+            handleOpenAuth('athlete');
+          }}
+        />
+      )}
 
       {activeView === 'photographer' && currentUser?.role === 'photographer' && currentUser.needsOnboarding && !onboardingSkipped && (
         <PhotographerOnboarding

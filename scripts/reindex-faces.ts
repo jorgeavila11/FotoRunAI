@@ -8,6 +8,7 @@ import 'dotenv/config';
 import { db, BUCKET_ORIGINALS } from '../server/supabase';
 import { indexPhotoFaces } from '../server/face-index';
 import { faceModelsAvailable } from '../server/faces';
+import { expiredEvents, RetentionEvent } from '../server/retention';
 
 const all = process.argv.includes('--all');
 
@@ -17,8 +18,20 @@ async function main() {
     process.exit(1);
   }
 
-  let query = db.from('photos').select('id, event_id, filename, original_path').order('created_at');
+  // Não recria impressões faciais de eventos cujo prazo (LGPD) já venceu
+  const { data: events } = await db
+    .from('events')
+    .select('id, event_date, created_at, faces_retention_months, photos_retention_months');
+  const { facesExpired } = expiredEvents((events || []) as RetentionEvent[]);
+
+  let query = db
+    .from('photos')
+    .select('id, event_id, filename, original_path')
+    .is('purged_at', null)
+    .is('hidden_at', null)
+    .order('created_at');
   if (!all) query = query.is('faces_indexed_at', null);
+  if (facesExpired.length > 0) query = query.not('event_id', 'in', `(${facesExpired.map((id) => `"${id}"`).join(',')})`);
   const { data: photos, error } = await query;
   if (error) throw error;
 
