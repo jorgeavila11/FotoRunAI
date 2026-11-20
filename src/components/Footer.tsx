@@ -47,6 +47,11 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenAuth, onOpenPr
                 </button>
               </li>
               <li>
+                <button type="button" onClick={() => onNavigate('taxas')} className="hover:text-white transition-colors">
+                  Taxas e serviços
+                </button>
+              </li>
+              <li>
                 <button type="button" onClick={() => onOpenAuth('photographer')} className="hover:text-[#38BDF8] text-slate-300 transition-colors">
                   Seja um Fotógrafo Parceiro
                 </button>

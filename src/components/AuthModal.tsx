@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Camera, User, ShieldCheck, CheckCircle2, Loader2, MailCheck } from 'lucide-react';
 import { UserRole } from '../types';
 import { supabase } from '../lib/supabase';
+import { useFees, pct } from '../lib/fees';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onAuthenticated,
 }) => {
+  const { fees } = useFees();
   const [role, setRole] = useState<UserRole>(initialRole);
   const [mode, setMode] = useState<'register' | 'login'>('register');
   const [name, setName] = useState('');
@@ -275,7 +277,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 {role === 'photographer'
-                  ? 'Chave Pix * (para receber 85% por venda)'
+                  ? `Chave Pix * (para receber ${pct(fees.photographerSharePercent)} por venda)`
                   : 'Número de Peito Habitual (opcional)'}
               </label>
               <input
@@ -292,10 +294,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="p-3.5 rounded-lg bg-[#0F172A] text-white text-xs space-y-1">
                 <p className="font-bold text-[#38BDF8] flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4" />
-                  Repasse de 85% por foto vendida
+                  Repasse de {pct(fees.photographerSharePercent)} por foto vendida
                 </p>
                 <p className="text-slate-300">
-                  Indexação facial automática e saque imediato via Pix sem taxa de adesão.
+                  Sem mensalidade e sem taxa de saque. Depois você confirma seus dados em "Conta de recebimento".
                 </p>
               </div>
             )}

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, AlertCircle, Images, ScanFace, MapPin, Lightbulb, Table2, BarChart3 } from 'lucide-react';
 import { apiFetch } from '../lib/supabase';
+import { useFees, pct } from '../lib/fees';
 
 interface Period {
   net: number;
@@ -163,6 +164,7 @@ function MonthlyChart({ data, metric, compare }: { data: MonthPoint[]; metric: '
 /* ------------------------------------------------------------------ Componente principal */
 
 export const PhotographerInsights: React.FC<{ refreshKey?: number }> = ({ refreshKey = 0 }) => {
+  const { fees } = useFees();
   const [data, setData] = useState<Insights | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -255,7 +257,7 @@ export const PhotographerInsights: React.FC<{ refreshKey?: number }> = ({ refres
           <div>
             <p className="text-xs font-semibold text-[#38BDF8]">Disponível para saque</p>
             <p className="text-2xl font-extrabold font-mono-num">{brl(data.balance.available)}</p>
-            <p className="text-xs text-slate-300">Já sacado: {brl(data.balance.paidOut)} · você recebe 85% de cada venda</p>
+            <p className="text-xs text-slate-300">Já sacado: {brl(data.balance.paidOut)} · você recebe {pct(fees.photographerSharePercent)} de cada venda</p>
           </div>
           <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-700 text-xs">
             <p className="flex items-center gap-1.5 text-slate-200">

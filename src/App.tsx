@@ -25,6 +25,8 @@ import { PhotographerDashboardView } from './components/PhotographerDashboardVie
 import { AdminEventsView } from './components/AdminEventsView';
 import { PhotographerOnboarding } from './components/PhotographerOnboarding';
 import { RemoveMyPhotosModal } from './components/RemoveMyPhotosModal';
+import { FeesView } from './components/FeesView';
+import { PayoutAccountView } from './components/PayoutAccountView';
 import { CheckoutModal } from './components/CheckoutModal';
 import { DownloadsView } from './components/DownloadsView';
 import { AuthModal } from './components/AuthModal';
@@ -443,7 +445,20 @@ export default function App() {
                   setPhotographerStats(nextStats);
                 }}
                 onViewPublicEvent={(eventId) => handleSelectEvent(eventId)}
+                onOpenPayoutAccount={() => handleNavigate('conta-recebimento')}
+                onOpenFees={() => handleNavigate('taxas')}
               />
+            )}
+
+            {activeView === 'taxas' && (
+              <FeesView currentUser={currentUser} onNavigate={handleNavigate} onOpenAuth={handleOpenAuth} />
+            )}
+
+            {activeView === 'conta-recebimento' && currentUser?.role !== 'photographer' &&
+              loginGate('Conta de recebimento', 'Entre com sua conta de fotógrafo para cadastrar onde receber seus repasses.', 'photographer')}
+
+            {activeView === 'conta-recebimento' && currentUser?.role === 'photographer' && (
+              <PayoutAccountView onNavigate={handleNavigate} />
             )}
 
             {activeView === 'admin' && !currentUser?.isAdmin &&

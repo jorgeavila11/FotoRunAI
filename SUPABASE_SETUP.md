@@ -182,3 +182,23 @@ No Supabase, abra **SQL Editor > New query**, cole todo o conteúdo de `supabase
 - Para ver o que seria apagado sem apagar nada: `npm run retention:run -- --dry-run`. Para rodar na hora: `npm run retention:run`.
 
 **Remover minhas fotos:** no rodapé do site e na busca facial existe o botão "Remover minhas fotos". O atleta entra na conta, envia uma selfie e as fotos dele saem na hora da vitrine e da busca. O pedido aparece no topo de **Administração**, onde você confirma a exclusão definitiva ou restaura (se for engano).
+
+---
+
+## Passo 10 — Conta de recebimento e Taxas e serviços
+
+1. No Supabase, abra **SQL Editor**, cole o conteúdo de `supabase/migrations/0007_conta_recebimento.sql` e clique em **Run** (depois da 0006).
+2. Como funciona:
+   - O fotógrafo abre **Painel → Conta de recebimento** e preenche 3 etapas: dados do titular, chave Pix (e conta bancária, opcional) e confirmação.
+   - A conta entra **em análise**. Em **Administração** aparece "Contas de recebimento para aprovar". Dica: faça um Pix de R$ 0,01 para a chave e confira se o nome do titular bate antes de aprovar.
+   - O fotógrafo pode vender normalmente enquanto isso; o **saque só é liberado com a conta aprovada**.
+   - Se ele trocar chave Pix, CPF/CNPJ ou banco, a conta volta para análise (proteção contra desvio de repasses).
+   - Os saques pedidos aparecem em **Administração → Saques a pagar**. Faça o Pix pelo app do banco e clique em "Marquei como pago". (Quando o Pix automático for ligado, isso deixa de ser manual.)
+3. Página pública **Taxas e serviços** (link no rodapé): mostra os valores reais que o sistema usa.
+4. Variáveis opcionais no Render:
+
+| Variável | Padrão | O que faz |
+|---|---|---|
+| `PLATFORM_FEE_PERCENT` | `15` | Taxa da plataforma sobre cada venda. Muda a página de taxas, o painel e o cálculo. Vendas antigas não mudam. |
+| `PAYOUT_BUSINESS_DAYS` | `2` | Prazo prometido para o saque cair na conta. |
+| `MIN_PAYOUT` | `0` | Valor mínimo para pedir saque (em reais). |

@@ -12,6 +12,8 @@ import { decodeDataUrl, normalizeImage } from './server/image-formats';
 import { registerPainelRoutes, markRequestApproved } from './server/painel';
 import { getCategory, isValidCategory } from './src/data/categories';
 import { registerPrivacyRoutes } from './server/privacy';
+import { PHOTOGRAPHER_SHARE, MIN_PAYOUT, PAYOUT_BUSINESS_DAYS, feesInfo } from './server/fees';
+import { registerPayoutAccountRoutes, getPayoutAccount, maskPixKey } from './server/payout-account';
 import { scheduleRetention, addMonths, DOWNLOAD_RETENTION_MONTHS } from './server/retention';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -31,7 +33,6 @@ const GEMINI_MODELS = Array.from(
 const GEMINI_MODEL = GEMINI_MODELS[0];
 // Tempo total que uma operação pode gastar somando todas as tentativas
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 80_000;
-const PHOTOGRAPHER_SHARE = 0.85; // repasse de 85% ao fotógrafo
 const MAX_FILES_PER_UPLOAD = 10;
 const MAX_FACIAL_CANDIDATES = 14; // limite atual por chamada; o Passo 4 troca por busca vetorial
 
@@ -358,6 +359,12 @@ async function ordersForBuyer(buyerId: string) {
 // ---------------------------------------------------------------------------
 
 // Usado pela hospedagem para saber se o servidor está no ar
+// Taxas públicas (página "Taxas e serviços")
+app.get('/api/fees', (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json(feesInfo());
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, faceModels: faceModelsAvailable(), gemini: Boolean(ai) });
 });
@@ -908,14 +915,35 @@ app.post('/api/payout', requireUser, requirePhotographer, async (req: AuthedRequ
   if (stats.availablePixBalance <= 0) {
     return res.status(400).json({ error: 'Não há saldo disponível para saque.' });
   }
-  if (!u.profile.pix_key) {
-    return res.status(400).json({ error: 'Cadastre sua chave Pix no perfil antes de solicitar o saque.' });
+  if (stats.availablePixBalance < MIN_PAYOUT) {
+    return res.status(400).json({ error: `O saque mínimo é de R$ ${MIN_PAYOUT.toFixed(2).replace('.', ',')}.` });
+  }
+  const account = await getPayoutAccount(u.id);
+  if (!account) {
+    return res.status(400).json({ error: 'Cadastre sua conta de recebimento antes de solicitar o saque.', code: 'sem_conta' });
+  }
+  if (account.status !== 'aprovada') {
+    return res.status(400).json({
+      error:
+        account.status === 'recusada'
+          ? 'Sua conta de recebimento precisa de correção. Abra "Conta de recebimento" para ver o motivo.'
+          : 'Sua conta de recebimento está em análise. Assim que for aprovada, o saque é liberado.',
+      code: 'conta_' + account.status,
+    });
+  }
+  const { count: pending } = await db
+    .from('payouts')
+    .select('id', { count: 'exact', head: true })
+    .eq('photographer_id', u.id)
+    .eq('status', 'solicitado');
+  if ((pending || 0) > 0) {
+    return res.status(400).json({ error: 'Você já tem um saque em andamento. Aguarde ele ser pago para pedir outro.' });
   }
 
   const { error } = await db.from('payouts').insert({
     photographer_id: u.id,
     amount: stats.availablePixBalance,
-    pix_key: u.profile.pix_key,
+    pix_key: account.pix_key,
     status: 'solicitado',
   });
   if (error) return res.status(500).json({ error: 'Não foi possível registrar o saque.' });
@@ -924,7 +952,7 @@ app.post('/api/payout', requireUser, requirePhotographer, async (req: AuthedRequ
   res.json({
     paidOut: stats.availablePixBalance,
     photographerStats: await photographerStats(u.id),
-    message: `Saque de R$ ${amountLabel} solicitado para a chave Pix ${u.profile.pix_key}. O pagamento será processado em breve.`,
+    message: `Saque de R$ ${amountLabel} solicitado para a chave Pix ${maskPixKey(account.pix_key_type, account.pix_key)}. Cai em até ${PAYOUT_BUSINESS_DAYS} dia(s) útil(eis).`,
   });
 });
 
@@ -1132,6 +1160,7 @@ app.delete('/api/admin/events/:id', requireUser, requireAdmin, async (req, res) 
 
 registerPainelRoutes(app);
 registerPrivacyRoutes(app);
+registerPayoutAccountRoutes(app);
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

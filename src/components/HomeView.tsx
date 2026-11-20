@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { EventItem } from '../types';
 import { SEEDED_IMAGES } from '../data/assets';
+import { useFees, pct } from '../lib/fees';
 
 interface HomeViewProps {
   events: EventItem[];
@@ -30,6 +31,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onOpenAuth,
   showEventsOnly = false,
 }) => {
+  const { fees } = useFees();
   const [searchMode, setSearchMode] = useState<'selfie' | 'bib' | 'event'>('selfie');
   const [bibInput, setBibInput] = useState('');
   const [eventQuery, setEventQuery] = useState('');
@@ -531,7 +533,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <p className="text-xs font-bold uppercase tracking-wider text-[#38BDF8]">Para Fotógrafos Esportivos</p>
               <h3 className="text-2xl font-extrabold">Monetize sua cobertura com IA</h3>
               <p className="text-slate-300 text-sm leading-relaxed">
-                Suba lotes de fotos e deixe nossa IA detectar rostos e números de peito automaticamente. Receba 85% do valor vendido direto via Pix.
+                Suba lotes de fotos e deixe nossa IA detectar rostos e números de peito automaticamente. Receba {pct(fees.photographerSharePercent)} do valor vendido direto via Pix.
               </p>
               <ul className="space-y-2.5 text-sm text-slate-200 pt-2">
                 <li className="flex items-start gap-2.5">
@@ -544,7 +546,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </li>
                 <li className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-[#38BDF8] mt-0.5 shrink-0" />
-                  <span>Saque instantâneo via Pix com repasse de 85% por venda</span>
+                  <span>Saque via Pix sem taxa, com repasse de {pct(fees.photographerSharePercent)} por venda</span>
                 </li>
               </ul>
             </div>

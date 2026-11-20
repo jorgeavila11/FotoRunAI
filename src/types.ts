@@ -1,4 +1,12 @@
-export type ActiveView = 'home' | 'events' | 'event' | 'photographer' | 'downloads' | 'admin';
+export type ActiveView =
+  | 'home'
+  | 'events'
+  | 'event'
+  | 'photographer'
+  | 'downloads'
+  | 'admin'
+  | 'taxas'
+  | 'conta-recebimento';
 
 export type UserRole = 'athlete' | 'photographer';
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   CloudUpload,
   Eye,
@@ -10,7 +10,10 @@ import {
   Receipt,
   AlertCircle,
   CalendarPlus,
+  Landmark,
+  BadgePercent,
 } from 'lucide-react';
+import { useFees, pct } from '../lib/fees';
 import {
   EventItem,
   PhotoItem,
@@ -56,6 +59,10 @@ interface PhotographerDashboardViewProps {
   ) => void;
   onViewPublicEvent: (eventId: string) => void;
   photographerName: string;
+  /** Abre a tela "Conta de recebimento" */
+  onOpenPayoutAccount: () => void;
+  /** Abre a página "Taxas e serviços" */
+  onOpenFees: () => void;
 }
 
 export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps> = ({
@@ -69,7 +76,18 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
   onPayoutDone,
   onViewPublicEvent,
   photographerName,
+  onOpenPayoutAccount,
+  onOpenFees,
 }) => {
+  const { fees, share } = useFees();
+  // Situação da conta de recebimento: null = ainda não cadastrada
+  const [accountStatus, setAccountStatus] = useState<'carregando' | 'sem_conta' | 'em_analise' | 'aprovada' | 'recusada'>('carregando');
+  useEffect(() => {
+    apiFetch('/api/me/payout-account')
+      .then((r) => r.json())
+      .then((d) => setAccountStatus(d.account ? d.account.status : 'sem_conta'))
+      .catch(() => setAccountStatus('sem_conta'));
+  }, []);
   const [targetEventId, setTargetEventId] = useState(events[0]?.id || 'sobral-online-run-2026');
   const [checkpoint, setCheckpoint] = useState('Linha de Chegada');
   const [batchName, setBatchName] = useState('');
@@ -88,6 +106,7 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
 
   const [payoutLoading, setPayoutLoading] = useState(false);
   const [payoutMsg, setPayoutMsg] = useState<string | null>(null);
+  const [payoutOk, setPayoutOk] = useState(true);
   // Recarrega os indicadores depois de envios e saques
   const [insightsKey, setInsightsKey] = useState(0);
   // Abre o formulário de solicitação de evento
@@ -200,6 +219,7 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
 
   const handleRequestPayout = async () => {
     if (stats.availablePixBalance <= 0) {
+      setPayoutOk(false);
       setPayoutMsg('Não há saldo disponível para saque no momento.');
       return;
     }
@@ -210,9 +230,11 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
       const data = await res.json();
       if (res.ok) {
         onPayoutDone(data.photographerStats, data.message);
+        setPayoutOk(true);
         setPayoutMsg(data.message);
         setInsightsKey((k) => k + 1);
       } else {
+        setPayoutOk(false);
         setPayoutMsg(data.error || 'Não foi possível solicitar o saque.');
       }
     } finally {
@@ -251,6 +273,15 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
 
           <button
             type="button"
+            onClick={onOpenPayoutAccount}
+            className="px-4 py-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-[#0F172A] text-sm font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap"
+          >
+            <Landmark className="w-4 h-4" />
+            <span>Conta de recebimento</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setRequestSignal((n) => n + 1)}
             className="px-4 py-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-[#0F172A] text-sm font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap"
           >
@@ -270,10 +301,33 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
         </div>
       </div>
 
+      {(accountStatus === 'sem_conta' || accountStatus === 'recusada' || accountStatus === 'em_analise') && (
+        <div
+          className={`p-4 rounded-xl border text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+            accountStatus === 'em_analise' ? 'bg-sky-50 border-sky-200 text-sky-900' : 'bg-amber-50 border-amber-300 text-amber-900'
+          }`}
+        >
+          <span className="font-medium">
+            {accountStatus === 'sem_conta' && 'Configure sua conta de recebimento para poder sacar o que você vender.'}
+            {accountStatus === 'recusada' && 'Sua conta de recebimento precisa de uma correção para liberar os saques.'}
+            {accountStatus === 'em_analise' && 'Sua conta de recebimento está em análise. Você já pode vender; o saque é liberado após a aprovação.'}
+          </span>
+          {accountStatus !== 'em_analise' && (
+            <button type="button" onClick={onOpenPayoutAccount} className="font-bold underline whitespace-nowrap self-start sm:self-auto">
+              {accountStatus === 'sem_conta' ? 'Configurar conta' : 'Corrigir dados'}
+            </button>
+          )}
+        </div>
+      )}
+
       {payoutMsg && (
-        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm flex items-center justify-between gap-3">
+        <div
+          className={`p-4 rounded-xl border text-sm flex items-center justify-between gap-3 ${
+            payoutOk ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50 border-red-200 text-red-800'
+          }`}
+        >
           <span className="flex items-center gap-2 font-medium">
-            <CheckCircle2 className="w-5 h-5 text-[#10B981] shrink-0" />
+            {payoutOk ? <CheckCircle2 className="w-5 h-5 text-[#10B981] shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
             {payoutMsg}
           </span>
           <button type="button" onClick={() => setPayoutMsg(null)} className="text-xs underline">
@@ -526,7 +580,7 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
                   />
                 </div>
                 <p className="text-xs text-slate-600 font-mono-num">
-                  Líquido (85%): <strong className="text-[#10B981]">R$ {(parsedIndivPreview * 0.85).toFixed(2).replace('.', ',')}</strong>
+                  Líquido ({pct(fees.photographerSharePercent)}): <strong className="text-[#10B981]">R$ {(parsedIndivPreview * share).toFixed(2).replace('.', ',')}</strong>
                 </p>
               </div>
 
@@ -545,7 +599,7 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
                   />
                 </div>
                 <p className="text-xs text-slate-600 font-mono-num">
-                  Líquido (85%): <strong className="text-[#10B981]">R$ {(parsedPackPreview * 0.85).toFixed(2).replace('.', ',')}</strong>
+                  Líquido ({pct(fees.photographerSharePercent)}): <strong className="text-[#10B981]">R$ {(parsedPackPreview * share).toFixed(2).replace('.', ',')}</strong>
                 </p>
               </div>
             </div>
@@ -582,7 +636,11 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
 
           <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <span className="text-xs text-[#10B981] font-semibold">
-              {pricingFeedback || 'Taxa de plataforma fixa de 15%'}
+              {pricingFeedback || (
+                <button type="button" onClick={onOpenFees} className="inline-flex items-center gap-1 underline">
+                  <BadgePercent className="w-3.5 h-3.5" /> Taxa da plataforma: {pct(fees.platformFeePercent)} (já com Pix/cartão) — ver todas as taxas
+                </button>
+              )}
             </span>
             <button
               type="submit"
@@ -635,7 +693,7 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
               <span>Vendas Recentes</span>
             </h2>
             <p className="text-sm text-slate-600">
-              Compras confirmadas por atletas com crédito automático de 85% no saldo Pix.
+              Compras confirmadas por atletas com crédito automático de {pct(fees.photographerSharePercent)} no saldo.
             </p>
           </div>
         </div>
