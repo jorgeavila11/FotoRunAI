@@ -202,3 +202,17 @@ No Supabase, abra **SQL Editor > New query**, cole todo o conteúdo de `supabase
 | `PLATFORM_FEE_PERCENT` | `15` | Taxa da plataforma sobre cada venda. Muda a página de taxas, o painel e o cálculo. Vendas antigas não mudam. |
 | `PAYOUT_BUSINESS_DAYS` | `2` | Prazo prometido para o saque cair na conta. |
 | `MIN_PAYOUT` | `0` | Valor mínimo para pedir saque (em reais). |
+
+---
+
+## Passo 11 — Painel de administração
+
+1. No Supabase, abra **SQL Editor**, cole o conteúdo de `supabase/migrations/0008_admin_plataforma.sql` e clique em **Run** (depois da 0007).
+2. Entre com a conta de administrador e clique em **Administração**. Abas:
+   - **Visão geral:** receita da FotoRun, vendas totais, pedidos, fotos vendidas, repasses, gráficos de vendas e de cadastros por mês, eventos e fotógrafos que mais venderam, e as pendências do dia.
+   - **Eventos:** criar, editar, aprovar ou recusar pedidos de fotógrafos, **desativar** e **reativar** eventos.
+     Evento desativado some da vitrine e da busca, não aceita fotos nem compras; quem já comprou continua baixando.
+   - **Fotógrafos** e **Usuários:** busca, filtros, ordenação, exportar planilha (CSV) e **suspender/reativar** conta.
+     Conta suspensa não consegue entrar; as fotos de fotógrafo suspenso saem da vitrine (nada é apagado).
+   - **Financeiro:** saques a pagar e contas de recebimento para aprovar.
+   - **LGPD:** pedidos "Remover minhas fotos".

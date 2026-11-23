@@ -12,6 +12,7 @@ import { decodeDataUrl, normalizeImage } from './server/image-formats';
 import { registerPainelRoutes, markRequestApproved } from './server/painel';
 import { getCategory, isValidCategory } from './src/data/categories';
 import { registerPrivacyRoutes } from './server/privacy';
+import { registerAdminRoutes, suspendedIds, disabledEventIds } from './server/admin';
 import { PHOTOGRAPHER_SHARE, MIN_PAYOUT, PAYOUT_BUSINESS_DAYS, feesInfo } from './server/fees';
 import { registerPayoutAccountRoutes, getPayoutAccount, maskPixKey } from './server/payout-account';
 import { scheduleRetention, addMonths, DOWNLOAD_RETENTION_MONTHS } from './server/retention';
@@ -371,15 +372,21 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/bootstrap', async (_req, res) => {
   try {
-    const [eventsRes, photosRes] = await Promise.all([
-      db.from('events').select('*').order('event_date', { ascending: false }),
+    const [eventsRes, photosRes, suspended] = await Promise.all([
+      // Eventos desativados pela administração não aparecem na vitrine
+      db.from('events').select('*').is('disabled_at', null).order('event_date', { ascending: false }),
       db.from('photos').select(PUBLIC_PHOTO_COLUMNS).is('hidden_at', null).is('purged_at', null).order('captured_at', { ascending: false }).limit(2000),
+      suspendedIds(),
     ]);
     if (eventsRes.error) throw eventsRes.error;
     if (photosRes.error) throw photosRes.error;
 
-    const photos = (photosRes.data as unknown as PhotoRow[]).map(toPublicPhoto);
-    const rawPhotos = photosRes.data as unknown as PhotoRow[];
+    // Só fotos de eventos ativos e de fotógrafos não suspensos
+    const activeEvents = new Set((eventsRes.data || []).map((e) => e.id));
+    const rawPhotos = (photosRes.data as unknown as PhotoRow[]).filter(
+      (p) => activeEvents.has(p.event_id) && !suspended.has(p.photographer_id),
+    );
+    const photos = rawPhotos.map(toPublicPhoto);
 
     const events = (eventsRes.data || []).map((e) => {
       const ofEvent = rawPhotos.filter((p) => p.event_id === e.id);
@@ -451,7 +458,18 @@ app.post('/api/search/facial', async (req, res) => {
     if (error) throw error;
 
     type MatchRow = { photo_id: string; similarity: number; box: PhotoRow['face_box']; face_px: number };
-    const matches = ((data || []) as MatchRow[]).map((m) => {
+    // Tira resultados de eventos desativados e de fotógrafos suspensos
+    let rows = (data || []) as MatchRow[];
+    if (rows.length) {
+      const [{ data: info }, disabled, suspended] = await Promise.all([
+        db.from('photos').select('id, event_id, photographer_id').in('id', rows.map((m) => m.photo_id)),
+        disabledEventIds(),
+        suspendedIds(),
+      ]);
+      const ok = new Set((info || []).filter((p) => !disabled.has(p.event_id) && !suspended.has(p.photographer_id)).map((p) => p.id));
+      rows = rows.filter((m) => ok.has(m.photo_id));
+    }
+    const matches = rows.map((m) => {
       const confidence = similarityToConfidence(Number(m.similarity), FACE_MATCH_THRESHOLD);
       return {
         photoId: m.photo_id,
@@ -578,8 +596,9 @@ app.post('/api/photos/upload', requireUser, requirePhotographer, async (req: Aut
       return res.status(400).json({ error: `Envie no máximo ${MAX_FILES_PER_UPLOAD} fotos por vez.` });
     }
 
-    const { data: eventObj } = await db.from('events').select('id, checkpoints, category').eq('id', eventId).maybeSingle();
+    const { data: eventObj } = await db.from('events').select('id, checkpoints, category, disabled_at').eq('id', eventId).maybeSingle();
     if (!eventObj) return res.status(404).json({ error: 'Evento não encontrado.' });
+    if (eventObj.disabled_at) return res.status(403).json({ error: 'Este evento foi desativado pela administração e não aceita novas fotos.' });
 
     const { data: batch, error: batchError } = await db
       .from('upload_batches')
@@ -781,8 +800,9 @@ app.post('/api/orders', requireUser, async (req: AuthedRequest, res) => {
       return res.status(400).json({ error: 'Pedido inválido.' });
     }
 
-    const { data: eventObj } = await db.from('events').select('id, title, pack_price').eq('id', eventId).maybeSingle();
+    const { data: eventObj } = await db.from('events').select('id, title, pack_price, disabled_at').eq('id', eventId).maybeSingle();
     if (!eventObj) return res.status(404).json({ error: 'Evento não encontrado.' });
+    if (eventObj.disabled_at) return res.status(403).json({ error: 'Este evento não está mais disponível para compra.' });
 
     const ids = Array.from(new Set((photoIds || []).filter((id) => typeof id === 'string')));
     if (ids.length === 0) return res.status(400).json({ error: 'Selecione ao menos uma foto para concluir o pedido.' });
@@ -796,6 +816,10 @@ app.post('/api/orders', requireUser, async (req: AuthedRequest, res) => {
       .is('hidden_at', null)
       .is('purged_at', null)
       .in('id', ids);
+    const suspendedSellers = await suspendedIds();
+    if (photos) {
+      for (let i = photos.length - 1; i >= 0; i--) if (suspendedSellers.has(photos[i].photographer_id)) photos.splice(i, 1);
+    }
     if (!photos || photos.length === 0) return res.status(400).json({ error: 'Fotos não encontradas neste evento.' });
 
     // Não cobra de novo fotos que o atleta já comprou
@@ -1077,6 +1101,8 @@ app.get('/api/admin/events', requireUser, requireAdmin, async (_req, res) => {
       ownerName: e.profiles?.full_name || null,
       facesRetentionMonths: e.faces_retention_months ?? 6,
       photosRetentionMonths: e.photos_retention_months ?? 12,
+      disabledAt: e.disabled_at ?? null,
+      disabledReason: e.disabled_reason ?? null,
       coverImage: e.cover_image,
       photoCount: count(photos, e.id),
       orderCount: count(orders, e.id),
@@ -1148,7 +1174,7 @@ app.delete('/api/admin/events/:id', requireUser, requireAdmin, async (req, res) 
   ]);
   if ((photos || 0) > 0 || (orders || 0) > 0) {
     return res.status(409).json({
-      error: 'Este evento já tem fotos ou pedidos e não pode ser excluído. Para tirá-lo da vitrine, mude o status para "Em breve".',
+      error: 'Este evento já tem fotos ou pedidos e não pode ser excluído. Para tirá-lo da vitrine, use o botão "Desativar".',
     });
   }
   const { error } = await db.from('events').delete().eq('id', id);
@@ -1161,6 +1187,7 @@ app.delete('/api/admin/events/:id', requireUser, requireAdmin, async (req, res) 
 registerPainelRoutes(app);
 registerPrivacyRoutes(app);
 registerPayoutAccountRoutes(app);
+registerAdminRoutes(app);
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

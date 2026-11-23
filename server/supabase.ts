@@ -70,6 +70,9 @@ export async function requireUser(req: AuthedRequest, res: Response, next: NextF
   if (profileError || !profile) {
     return res.status(403).json({ error: 'Perfil não encontrado para este usuário.' });
   }
+  if (profile.suspended_at && profile.role !== 'admin') {
+    return res.status(403).json({ error: 'Sua conta está suspensa. Fale com o suporte do FotoRun.', code: 'conta_suspensa' });
+  }
 
   req.user = {
     id: data.user.id,

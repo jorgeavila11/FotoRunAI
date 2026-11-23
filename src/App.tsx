@@ -22,7 +22,7 @@ import { Footer } from './components/Footer';
 import { HomeView } from './components/HomeView';
 import { EventGalleryView } from './components/EventGalleryView';
 import { PhotographerDashboardView } from './components/PhotographerDashboardView';
-import { AdminEventsView } from './components/AdminEventsView';
+import { AdminView } from './components/admin/AdminView';
 import { PhotographerOnboarding } from './components/PhotographerOnboarding';
 import { RemoveMyPhotosModal } from './components/RemoveMyPhotosModal';
 import { FeesView } from './components/FeesView';
@@ -99,6 +99,8 @@ export default function App() {
   const [onboardingSkipped, setOnboardingSkipped] = useState(false);
   // Pedido "Remover minhas fotos" (LGPD)
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  // Aviso de conta suspensa
+  const [accountNotice, setAccountNotice] = useState<string | null>(null);
   const [authModalState, setAuthModalState] = useState<{
     isOpen: boolean;
     initialRole: UserRole;
@@ -141,6 +143,13 @@ export default function App() {
   const loadMe = useCallback(async (opts?: { goToDashboard?: boolean }) => {
     try {
       const res = await apiFetch('/api/me');
+      if (res.status === 403) {
+        const body = await res.json().catch(() => ({}));
+        if (body.code === 'conta_suspensa') {
+          setAccountNotice(body.error);
+          await supabase.auth.signOut();
+        }
+      }
       if (!res.ok) throw new Error();
       const data: MePayload = await res.json();
       setCurrentUser(data.user);
@@ -333,6 +342,16 @@ export default function App() {
       />
 
       <main className="flex-1">
+        {accountNotice && (
+          <div role="alert" className="max-w-[1440px] mx-auto px-4 sm:px-8 lg:px-16 pt-4">
+            <p className="flex items-start justify-between gap-3 bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">
+              {accountNotice}
+              <button type="button" onClick={() => setAccountNotice(null)} className="font-semibold underline shrink-0">
+                Fechar
+              </button>
+            </p>
+          </div>
+        )}
         {loading ? (
           <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 p-6 text-center">
             <Loader2 className="w-9 h-9 text-[#D04400] animate-spin" />
@@ -471,7 +490,7 @@ export default function App() {
               )}
 
             {activeView === 'admin' && currentUser?.isAdmin && (
-              <AdminEventsView
+              <AdminView
                 onEventsChanged={fetchBootstrap}
                 onViewPublicEvent={(eventId) => handleSelectEvent(eventId)}
               />
