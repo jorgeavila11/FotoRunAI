@@ -12,6 +12,22 @@ interface AuthModalProps {
   onAuthenticated: () => void;
 }
 
+const LAST_EMAIL_KEY = 'fotorun:last-email';
+function readLastEmail() {
+  try {
+    return localStorage.getItem(LAST_EMAIL_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+function saveLastEmail(email: string) {
+  try {
+    localStorage.setItem(LAST_EMAIL_KEY, email);
+  } catch {
+    /* navegador sem armazenamento: só não lembra */
+  }
+}
+
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   initialRole = 'athlete',
@@ -20,9 +36,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 }) => {
   const { fees } = useFees();
   const [role, setRole] = useState<UserRole>(initialRole);
-  const [mode, setMode] = useState<'register' | 'login'>('register');
+  // Quem já entrou neste aparelho abre direto em "Já tenho conta", com o e-mail preenchido
+  const [mode, setMode] = useState<'register' | 'login'>(() => (readLastEmail() ? 'login' : 'register'));
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => readLastEmail());
   const [phone, setPhone] = useState('');
   const [bibOrPix, setBibOrPix] = useState('');
   const [password, setPassword] = useState('');
@@ -94,6 +111,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        if (!error) saveLastEmail(email.trim());
         if (error) throw error;
       }
       onAuthenticated();
@@ -226,28 +244,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className={`grid grid-cols-1 gap-3 ${mode === 'register' ? 'sm:grid-cols-2' : ''}`}>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">E-mail *</label>
                 <input
                   type="email"
                   required
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="voce@exemplo.com.br"
                   className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-[#D04400]"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">WhatsApp</label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="(88) 99876-5432"
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-[#D04400]"
-                />
-              </div>
+              {/* WhatsApp só no cadastro; para entrar bastam e-mail e senha */}
+              {mode === 'register' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">WhatsApp</label>
+                  <input
+                    type="tel"
+                    autoComplete="tel-national"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="(88) 99876-5432"
+                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-[#D04400]"
+                  />
+                </div>
+              )}
             </div>
 
             <div>
