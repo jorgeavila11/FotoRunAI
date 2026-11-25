@@ -25,6 +25,7 @@ import { SEEDED_IMAGES } from '../data/assets';
 import { apiFetch } from '../lib/supabase';
 import { PhotographerInsights } from './PhotographerInsights';
 import { EventRequestsPanel } from './EventRequestsPanel';
+import { ShareLinksPanel } from './ShareLinksPanel';
 
 interface PhotographerDashboardViewProps {
   events: EventItem[];
@@ -338,6 +339,8 @@ export const PhotographerDashboardView: React.FC<PhotographerDashboardViewProps>
 
       {/* VISÃO GERAL: ganhos por período, desempenho mensal e vendas por ponto do percurso */}
       <PhotographerInsights refreshKey={insightsKey} />
+
+      <ShareLinksPanel refreshKey={insightsKey} />
 
       {/* SOLICITAÇÕES DE EVENTO */}
       <EventRequestsPanel

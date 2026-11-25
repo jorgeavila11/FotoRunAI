@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Loader2, AlertCircle, RefreshCw, Lock } from 'lucide-react';
 import { supabase, apiFetch } from './lib/supabase';
 import {
@@ -30,6 +30,7 @@ import { PayoutAccountView } from './components/PayoutAccountView';
 import { CheckoutModal } from './components/CheckoutModal';
 import { DownloadsView } from './components/DownloadsView';
 import { AuthModal } from './components/AuthModal';
+import { captureFromUrl, getReferral } from './lib/share';
 
 interface BootstrapPayload {
   events: EventItem[];
@@ -52,6 +53,9 @@ const EMPTY_STATS = { totalPhotosUploaded: 0, totalSold: 0, grossRevenue: 0, ava
 
 export default function App() {
   const [loading, setLoading] = useState(true);
+  // Link do evento (?evento=) e link de divulgação do fotógrafo (&f=)
+  const [deepLink] = useState(() => captureFromUrl());
+  const deepLinkDone = useRef(!deepLink.eventId);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -230,6 +234,31 @@ export default function App() {
     scrollToTop();
   };
 
+  // Abre direto o evento quando o site é aberto por um link ?evento=
+  useEffect(() => {
+    if (deepLinkDone.current || loading) return;
+    deepLinkDone.current = true;
+    if (deepLink.eventId && events.some((e) => e.id === deepLink.eventId)) {
+      handleSelectEvent(deepLink.eventId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, events]);
+
+  // Mantém a barra de endereço com o link do evento aberto (dá para copiar e mandar)
+  useEffect(() => {
+    if (!deepLinkDone.current) return;
+    let target = '/';
+    if (activeView === 'event' && activeEventId) {
+      const params = new URLSearchParams({ evento: activeEventId });
+      const ref = getReferral(activeEventId);
+      if (ref) params.set('f', ref);
+      target = `/?${params.toString()}`;
+    }
+    if (window.location.pathname + window.location.search !== target) {
+      window.history.replaceState(null, '', target);
+    }
+  }, [activeView, activeEventId, loading]);
+
   const handleToggleSelectPhoto = (photoId: string) => {
     setSelectedPhotoIds((prev) =>
       prev.includes(photoId) ? prev.filter((id) => id !== photoId) : [...prev, photoId]
@@ -401,6 +430,7 @@ export default function App() {
             {activeView === 'event' && (
               <EventGalleryView
                 onOpenPrivacy={() => setPrivacyOpen(true)}
+                linkedPhotographerSlug={getReferral(activeEvent.id)}
                 key={`${activeEvent.id}-${facialInitOptions.nonce}`}
                 events={events}
                 activeEvent={activeEvent}

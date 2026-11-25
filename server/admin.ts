@@ -69,7 +69,7 @@ export async function disabledEventIds(): Promise<Set<string>> {
   return new Set((data || []).map((e) => e.id));
 }
 
-type PaidOrder = { id: string; event_id: string; buyer_id: string; total_paid: number; paid_at: string | null; created_at: string };
+type PaidOrder = { id: string; event_id: string; buyer_id: string; total_paid: number; paid_at: string | null; created_at: string; referred_by: string | null };
 type PaidItem = { order_id: string; photographer_id: string; amount: number; photographer_net: number };
 type ProfileRow = {
   id: string;
@@ -84,7 +84,7 @@ type ProfileRow = {
 async function loadSales() {
   const [orders, items] = await Promise.all([
     fetchAll<PaidOrder>(() =>
-      db.from('orders').select('id, event_id, buyer_id, total_paid, paid_at, created_at').eq('status', 'pago').order('id'),
+      db.from('orders').select('id, event_id, buyer_id, total_paid, paid_at, created_at, referred_by').eq('status', 'pago').order('id'),
     ),
     fetchAll<PaidItem>(() =>
       db
@@ -234,7 +234,14 @@ export function registerAdminRoutes(app: Express) {
       const acc = new Map((accounts.data || []).map((a) => [a.photographer_id, a.status]));
 
       const buyer = new Map<string, { orders: number; spent: number }>();
+      const referred = new Map<string, { orders: number; total: number }>();
       for (const o of orders) {
+        if (o.referred_by) {
+          const r = referred.get(o.referred_by) || { orders: 0, total: 0 };
+          r.orders += 1;
+          r.total += Number(o.total_paid);
+          referred.set(o.referred_by, r);
+        }
         const b = buyer.get(o.buyer_id) || { orders: 0, spent: 0 };
         b.orders += 1;
         b.spent += Number(o.total_paid);
@@ -285,6 +292,8 @@ export function registerAdminRoutes(app: Express) {
               gross: round2(s?.gross || 0),
               net: round2(s?.net || 0),
               payoutAccount: acc.get(p.id) || null,
+              referredOrders: referred.get(p.id)?.orders || 0,
+              referredTotal: round2(referred.get(p.id)?.total || 0),
             };
           })
           .sort((x, y) => (y.createdAt || '').localeCompare(x.createdAt || '')),

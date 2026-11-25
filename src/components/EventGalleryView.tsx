@@ -17,7 +17,10 @@ import {
   Zap,
   Loader2,
   AlertCircle,
+  Share2,
+  UserRound,
 } from 'lucide-react';
+import { eventUrl, shareOrCopy } from '../lib/share';
 import { getCategory } from '../data/categories';
 import { EventItem, FacialMatchResult, PhotoItem, PricingConfig } from '../types';
 import { SAMPLE_SELFIES, SEEDED_IMAGES } from '../data/assets';
@@ -38,6 +41,8 @@ interface EventGalleryViewProps {
   initialBib?: string;
   /** Abre o pedido "Remover minhas fotos" (LGPD) */
   onOpenPrivacy?: () => void;
+  /** Apelido do fotógrafo quando o atleta chegou pelo link de divulgação */
+  linkedPhotographerSlug?: string | null;
 }
 
 export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
@@ -55,12 +60,24 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
   initialOpenFacial = false,
   initialBib = '',
   onOpenPrivacy,
+  linkedPhotographerSlug = null,
 }) => {
+  // Link de divulgação: começa mostrando as fotos de quem divulgou (dá para ver todas)
+  const linkedPhotographer =
+    (linkedPhotographerSlug &&
+      photos.find((p) => p.eventId === activeEvent.id && p.photographerSlug === linkedPhotographerSlug)?.photographer) ||
+    null;
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
+  const shareEvent = async () => {
+    const r = await shareOrCopy(eventUrl(activeEvent.id), `Fotos da ${activeEvent.title} no FotoRun`);
+    setShareMsg(r === 'copied' ? 'Link copiado! Cole no WhatsApp ou nas redes.' : r === 'failed' ? 'Não deu para copiar. Copie da barra de endereço.' : null);
+    if (r !== 'shared') setTimeout(() => setShareMsg(null), 4000);
+  };
   const [categoryTab, setCategoryTab] = useState<'all' | 'videos' | 'podium'>('all');
   const [bibQuery, setBibQuery] = useState(initialBib);
   const [checkpointFilter, setCheckpointFilter] = useState('all');
   const [timeFilter, setTimeFilter] = useState<'all' | 't1' | 't2' | 't3'>('all');
-  const [photographerFilter, setPhotographerFilter] = useState('all');
+  const [photographerFilter, setPhotographerFilter] = useState(linkedPhotographer || 'all');
   const [sortBy, setSortBy] = useState<'recent' | 'price' | 'checkpoint'>('recent');
 
   // Facial recognition state
@@ -98,7 +115,9 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
     setSelfieSummary(null);
     setFacialError(null);
     setCheckpointFilter('all');
-    setPhotographerFilter('all');
+    // Se veio pelo link de divulgação, mantém as fotos de quem divulgou
+    setPhotographerFilter(linkedPhotographer || 'all');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEvent.id]);
 
   // Cleanup camera stream on close or unmount
@@ -164,6 +183,8 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
       }
       setFacialMatches(data.matches || []);
       setSelfieSummary(data.selfieSummary || null);
+      // A selfie procura em todos os fotógrafos do evento
+      setPhotographerFilter('all');
       if (Array.isArray(data.matches) && data.matches.length > 0) {
         onSelectAllMatched(data.matches.map((m: FacialMatchResult) => m.photoId));
       }
@@ -269,7 +290,19 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
           <span>Voltar aos eventos</span>
         </button>
 
-        <div className="flex items-center gap-2 text-xs text-slate-500">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <button
+            type="button"
+            onClick={shareEvent}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-[#0F172A] hover:border-[#D04400] hover:text-[#D04400]"
+          >
+            <Share2 className="w-3.5 h-3.5" /> Compartilhar evento
+          </button>
+          {shareMsg && (
+            <span role="status" className="text-emerald-700 font-semibold">
+              {shareMsg}
+            </span>
+          )}
           <label htmlFor="event-switcher" className="font-medium">
             Evento ativo:
           </label>
@@ -633,6 +666,19 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
 
       {/* GALLERY TOOLBAR & FILTERS */}
       <section className="space-y-5">
+        {linkedPhotographer && photographerFilter === linkedPhotographer && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            <span className="flex items-center gap-2">
+              <UserRound className="w-4 h-4 shrink-0" />
+              <span>
+                Mostrando as fotos de <strong>{linkedPhotographer}</strong>. A busca por selfie procura em todos os fotógrafos do evento.
+              </span>
+            </span>
+            <button type="button" onClick={() => setPhotographerFilter('all')} className="font-bold underline whitespace-nowrap self-start sm:self-auto">
+              Ver fotos de todos os fotógrafos
+            </button>
+          </div>
+        )}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200 pb-4">
           <div className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0">
             <button
@@ -824,7 +870,7 @@ export const EventGalleryView: React.FC<EventGalleryViewProps> = ({
                   <div className="p-4 flex-1 flex flex-col justify-between gap-3">
                     <div>
                       <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span>{photo.photographer}</span>
+                        <span>Foto por {photo.photographer}</span>
                         <span className="font-mono-num">{photo.capturedAt}</span>
                       </div>
                       <p className="text-sm font-semibold text-[#0F172A] mt-1 line-clamp-1">

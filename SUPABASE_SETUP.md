@@ -216,3 +216,15 @@ No Supabase, abra **SQL Editor > New query**, cole todo o conteúdo de `supabase
      Conta suspensa não consegue entrar; as fotos de fotógrafo suspenso saem da vitrine (nada é apagado).
    - **Financeiro:** saques a pagar e contas de recebimento para aprovar.
    - **LGPD:** pedidos "Remover minhas fotos".
+
+---
+
+## Passo 12 — Link do evento e link de divulgação do fotógrafo
+
+1. No Supabase, abra **SQL Editor**, cole o conteúdo de `supabase/migrations/0009_link_divulgacao.sql` e clique em **Run** (depois da 0008).
+2. Como funciona:
+   - Cada evento tem um link próprio: `https://SEU-SITE/?evento=ID-DO-EVENTO`. O botão **Compartilhar evento** (na página do evento) copia esse link. É o link para o organizador e para os atletas.
+   - Cada fotógrafo ganha um **apelido** (ex.: `ana-ribeiro`) e, no painel dele, a seção **Divulgue suas fotos** mostra o link de cada evento em que ele tem fotos: `...?evento=ID&f=ana-ribeiro`, com botões **Copiar link** e **WhatsApp**.
+   - Quem abre o link do fotógrafo vê primeiro as fotos dele (com um botão para ver as de todos). A busca por selfie sempre procura em todos os fotógrafos.
+   - Se o atleta comprar em até 30 dias, o pedido fica marcado como **trazido por aquele fotógrafo**. Ele vê quantas vendas trouxe no painel; você vê a coluna **Pelo link** em Administração → Fotógrafos.
+3. Bônus opcional (desligado por padrão): no Render, crie a variável `REFERRAL_FEE_PERCENT` (ex.: `10`). Assim, nas fotos do próprio fotógrafo vendidas por quem chegou pelo link dele, a taxa cai de 15% para 10%. A página Taxas e serviços passa a mostrar esse bônus.

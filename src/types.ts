@@ -49,6 +49,8 @@ export interface PhotoItem {
   timeRange: 't1' | 't2' | 't3';
   capturedAt: string;
   photographer: string;
+  /** Apelido público do fotógrafo (link de divulgação) */
+  photographerSlug?: string | null;
   cameraSpec: string;
   resolution: string;
   caption: string;

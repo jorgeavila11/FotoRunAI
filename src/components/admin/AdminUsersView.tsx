@@ -23,6 +23,8 @@ export interface AdminUser {
   gross: number;
   net: number;
   payoutAccount: 'em_analise' | 'aprovada' | 'recusada' | null;
+  referredOrders: number;
+  referredTotal: number;
 }
 
 const ROLE_LABEL = { athlete: 'Atleta', photographer: 'Fotógrafo', admin: 'Administrador' } as const;
@@ -34,16 +36,16 @@ const ACCOUNT_LABEL: Record<string, { text: string; cls: string }> = {
 const date = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR') : '—');
 const PAGE = 25;
 
-type SortKey = 'name' | 'createdAt' | 'lastSignInAt' | 'photos' | 'sold' | 'net' | 'orders' | 'spent';
+type SortKey = 'name' | 'createdAt' | 'lastSignInAt' | 'photos' | 'sold' | 'net' | 'orders' | 'spent' | 'referredOrders';
 
 function toCsv(rows: AdminUser[], photographers: boolean) {
   const head = photographers
-    ? ['Nome', 'E-mail', 'Telefone', 'Cadastro', 'Fotos', 'Eventos', 'Fotos vendidas', 'Vendas (R$)', 'Líquido (R$)', 'Conta de recebimento', 'Situação']
+    ? ['Nome', 'E-mail', 'Telefone', 'Cadastro', 'Fotos', 'Eventos', 'Fotos vendidas', 'Vendas (R$)', 'Líquido (R$)', 'Vendas pelo link', 'Conta de recebimento', 'Situação']
     : ['Nome', 'E-mail', 'Telefone', 'Tipo', 'Cadastro', 'Último acesso', 'Pedidos', 'Gasto (R$)', 'Situação'];
   const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const lines = rows.map((u) =>
     (photographers
-      ? [u.name, u.email, u.phone, date(u.createdAt), u.photos, u.eventsCovered, u.sold, u.gross.toFixed(2).replace('.', ','), u.net.toFixed(2).replace('.', ','), u.payoutAccount ? ACCOUNT_LABEL[u.payoutAccount].text : 'Não cadastrada', u.suspendedAt ? 'Suspensa' : 'Ativa']
+      ? [u.name, u.email, u.phone, date(u.createdAt), u.photos, u.eventsCovered, u.sold, u.gross.toFixed(2).replace('.', ','), u.net.toFixed(2).replace('.', ','), u.referredOrders, u.payoutAccount ? ACCOUNT_LABEL[u.payoutAccount].text : 'Não cadastrada', u.suspendedAt ? 'Suspensa' : 'Ativa']
       : [u.name, u.email, u.phone, ROLE_LABEL[u.role], date(u.createdAt), date(u.lastSignInAt), u.orders, u.spent.toFixed(2).replace('.', ','), u.suspendedAt ? 'Suspensa' : 'Ativa']
     )
       .map(esc)
@@ -160,7 +162,7 @@ export const AdminUsersView: React.FC<Props> = ({ mode, onChanged }) => {
       </p>
     );
 
-  const colCount = isPh ? 7 : 7;
+  const colCount = isPh ? 8 : 7;
 
   return (
     <div className="space-y-4">
@@ -218,6 +220,7 @@ export const AdminUsersView: React.FC<Props> = ({ mode, onChanged }) => {
                   <Th k="photos" right>Fotos</Th>
                   <Th k="sold" right>Vendidas</Th>
                   <Th k="net" right>Líquido</Th>
+                  <Th k="referredOrders" right>Pelo link</Th>
                   <Th>Conta de recebimento</Th>
                 </>
               ) : (
@@ -261,6 +264,10 @@ export const AdminUsersView: React.FC<Props> = ({ mode, onChanged }) => {
                       <td className="px-3 py-2.5 text-right font-mono-num font-semibold">
                         {brl(u.net)}
                         <span className="block text-[11px] text-slate-500 font-normal">de {brl(u.gross)}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono-num">
+                        {u.referredOrders}
+                        {u.referredOrders > 0 && <span className="block text-[11px] text-slate-500">{brl(u.referredTotal)}</span>}
                       </td>
                       <td className="px-3 py-2.5">
                         {u.payoutAccount ? (

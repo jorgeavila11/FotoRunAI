@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../lib/supabase';
 import { AuthUser, EventItem, OrderReceipt, PhotoItem, PricingConfig } from '../types';
+import { getReferral } from '../lib/share';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -132,6 +133,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           paymentMethod,
           photoIds: targetPhotos.map((p) => p.id),
           couponCode: appliedCoupon,
+          // fotógrafo que trouxe o atleta pelo link de divulgação (se houver)
+          ref: getReferral(activeEvent.id),
         }),
       });
       const data = await res.json();

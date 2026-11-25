@@ -13,7 +13,8 @@ import { registerPainelRoutes, markRequestApproved } from './server/painel';
 import { getCategory, isValidCategory } from './src/data/categories';
 import { registerPrivacyRoutes } from './server/privacy';
 import { registerAdminRoutes, suspendedIds, disabledEventIds } from './server/admin';
-import { PHOTOGRAPHER_SHARE, MIN_PAYOUT, PAYOUT_BUSINESS_DAYS, feesInfo } from './server/fees';
+import { PHOTOGRAPHER_SHARE, REFERRAL_SHARE, MIN_PAYOUT, PAYOUT_BUSINESS_DAYS, feesInfo } from './server/fees';
+import { registerReferralRoutes, resolveReferrer } from './server/referral';
 import { registerPayoutAccountRoutes, getPayoutAccount, maskPixKey } from './server/payout-account';
 import { scheduleRetention, addMonths, DOWNLOAD_RETENTION_MONTHS } from './server/retention';
 
@@ -153,11 +154,11 @@ type PhotoRow = {
   face_box: { top: number; left: number; width: number; height: number } | null;
   is_podium: boolean;
   price: number | string;
-  profiles?: { full_name: string } | null;
+  profiles?: { full_name: string; public_slug?: string | null } | null;
 };
 
 const PUBLIC_PHOTO_COLUMNS =
-  'id, event_id, photographer_id, filename, preview_path, media_type, bib_numbers, checkpoint, time_range, captured_at, camera_spec, resolution, caption, face_descriptor, face_box, is_podium, price, profiles(full_name)';
+  'id, event_id, photographer_id, filename, preview_path, media_type, bib_numbers, checkpoint, time_range, captured_at, camera_spec, resolution, caption, face_descriptor, face_box, is_podium, price, profiles(full_name, public_slug)';
 
 function timeLabel(iso: string) {
   return new Date(iso).toLocaleTimeString('pt-BR', {
@@ -191,6 +192,7 @@ function toPublicPhoto(p: PhotoRow) {
     timeRange: p.time_range,
     capturedAt: timeLabel(p.captured_at),
     photographer: p.profiles?.full_name || 'Fotógrafo FotoRun',
+    photographerSlug: p.profiles?.public_slug || null,
     cameraSpec: p.camera_spec,
     resolution: p.resolution,
     caption: p.caption,
@@ -783,7 +785,7 @@ app.post('/api/photos/upload', requireUser, requirePhotographer, async (req: Aut
 app.post('/api/orders', requireUser, async (req: AuthedRequest, res) => {
   const u = req.user!;
   try {
-    const { eventId, athleteName, athleteEmail, athletePhone, bibNumber, purchaseType, paymentMethod, photoIds, couponCode } =
+    const { eventId, athleteName, athleteEmail, athletePhone, bibNumber, purchaseType, paymentMethod, photoIds, couponCode, ref } =
       req.body as {
         eventId: string;
         athleteName: string;
@@ -794,6 +796,8 @@ app.post('/api/orders', requireUser, async (req: AuthedRequest, res) => {
         paymentMethod: 'pix' | 'card';
         photoIds: string[];
         couponCode?: string;
+        /** apelido do fotógrafo que trouxe o atleta (link de divulgação) */
+        ref?: string;
       };
 
     if (!['pack', 'selected', 'single'].includes(purchaseType) || !['pix', 'card'].includes(paymentMethod)) {
@@ -856,12 +860,17 @@ app.post('/api/orders', requireUser, async (req: AuthedRequest, res) => {
     const discount = round2((subtotal * percentOff) / 100);
     const total = round2(Math.max(0.01, subtotal - discount));
 
+    // Quem indicou (link de divulgação). Nunca bloqueia a compra.
+    const referredBy = await resolveReferrer(ref, eventObj.id, u.id).catch(() => null);
+
     // Rateio do total entre os itens (o último absorve a diferença de centavos)
     let allocated = 0;
     const items = baseItems.map((i, idx) => {
       const amount = idx === baseItems.length - 1 ? round2(total - allocated) : round2((i.base / subtotal) * total);
       allocated = round2(allocated + amount);
-      return { photo_id: i.id, photographer_id: i.photographer_id, amount, photographer_net: round2(amount * PHOTOGRAPHER_SHARE) };
+      // Bônus (se ligado): fotos do próprio fotógrafo que trouxe o atleta pagam taxa menor
+      const share = referredBy && REFERRAL_SHARE !== null && i.photographer_id === referredBy ? REFERRAL_SHARE : PHOTOGRAPHER_SHARE;
+      return { photo_id: i.id, photographer_id: i.photographer_id, amount, photographer_net: round2(amount * share) };
     });
 
     const orderId = `FR-${crypto.randomInt(100000, 999999)}`;
@@ -880,6 +889,7 @@ app.post('/api/orders', requireUser, async (req: AuthedRequest, res) => {
       discount,
       total_paid: total,
       coupon_code: appliedCoupon,
+      referred_by: referredBy,
       status: 'pago', // TODO Passo 3: 'pendente' até o webhook do gateway confirmar
       paid_at: now,
       // Prazo para baixar as fotos (LGPD: os arquivos não ficam guardados para sempre)
@@ -1188,6 +1198,7 @@ registerPainelRoutes(app);
 registerPrivacyRoutes(app);
 registerPayoutAccountRoutes(app);
 registerAdminRoutes(app);
+registerReferralRoutes(app);
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
